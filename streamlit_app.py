@@ -48,14 +48,14 @@ class DeucesWildEngine:
             if not non_deuce_ranks: return "Straight Flush"
             # Standard SF Check
             if (non_deuce_ranks[-1] - non_deuce_ranks[0] <= 4): return "Straight Flush"
-            # Wheel Check (A-2-3-4-5) - simplified for brevity
+            # Wheel Check (A-2-3-4-5)
             if 14 in non_deuce_ranks and (non_deuce_ranks[0] == 3 or non_deuce_ranks[0] == 4 or non_deuce_ranks[0] == 5): return "Straight Flush"
 
         if deuces + max_k >= 4: return "4 of a Kind"
         if deuces == 0 and 3 in counts.values() and 2 in counts.values(): return "Full House"
         if is_flush: return "Flush"
         
-        # Straight Logic (Simplified for brevity)
+        # Straight Logic
         unique_vals = sorted(list(set(non_deuce_ranks)))
         if len(unique_vals) + deuces >= 5:
             if unique_vals[-1] - unique_vals[0] <= 4: return "Straight"
@@ -65,7 +65,6 @@ class DeucesWildEngine:
 
     def get_best_hold(self, hand):
         # A lightweight version of the optimal strategy
-        # Returns (Held Cards List, Strategy Name)
         deuces = [c for c in hand if c.startswith('2')]
         non_deuces = [c for c in hand if not c.startswith('2')]
         current_rank = self.evaluate_hand(hand)
@@ -168,7 +167,6 @@ st.markdown("""
 if 'bankroll' not in st.session_state: st.session_state.bankroll = 100.00
 if 'history' not in st.session_state: st.session_state.history = deque(maxlen=10)
 if 'denom' not in st.session_state: st.session_state.denom = 0.05
-if 'hand_input' not in st.session_state: st.session_state.hand_input = []
 
 engine = DeucesWildEngine()
 
@@ -179,15 +177,9 @@ col1, col2 = st.columns(2)
 with col1:
     st.metric("Bankroll", f"${st.session_state.bankroll:.2f}")
 with col2:
-    # Logic for Betting Level
     wins = list(st.session_state.history)
     win_count = sum(wins)
     total_tracked = len(wins)
-    
-    # Amy Logic (Simplified for Dashboard)
-    # Lvl 1 ($0.05) -> Needs 50% of last 10 to go up
-    # Lvl 2 ($0.10) -> Needs 50% of last 5
-    # Lvl 3 ($0.25) -> Needs 50% of last 3
     
     recommendation = "HOLD"
     color = "off"
@@ -201,7 +193,7 @@ with col2:
         if sum(recent)/len(recent) < 0.5:
             recommendation = "❄️ COOL DOWN ($0.05)"
             color = "inverse"
-        elif len(wins) >= 10 and (sum(wins[-5:])/5) >= 0.5: # Simple heuristic
+        elif len(wins) >= 10 and (sum(wins[-5:])/5) >= 0.5:
              recommendation = "🚀 MAX BET ($0.25)"
     
     st.metric("Current Denom", f"${st.session_state.denom:.2f}", recommendation)
@@ -215,13 +207,15 @@ tab1, tab2 = st.tabs(["✋ Hand Advisor", "💰 Session Logger"])
 with tab1:
     st.write("Select your cards to get optimal hold:")
     
-    # Card Selector Helpers
     suits = ['♠️', '♥️', '♦️', '♣️']
     ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
     
-    # We use 5 columns for fast input
+    # 🩹 FIX: Map emojis to codes safely BEFORE string combination
+    suit_map = {'♠️':'s', '♥️':'h', '♦️':'d', '♣️':'c'}
+
     cols = st.columns(5)
-    selected_hand = []
+    selected_hand = [] # For Display (Emoji)
+    clean_hand = []    # For Engine (Code)
     
     for i in range(5):
         with cols[i]:
@@ -229,18 +223,16 @@ with tab1:
             r = st.selectbox(f"R{i+1}", ranks, key=f"r{i}")
             # Suit
             s = st.selectbox(f"S{i+1}", suits, key=f"s{i}")
+            
+            # Combine for Display
             selected_hand.append(f"{r}{s}")
+            
+            # Combine for Engine (Safe Mapping)
+            clean_hand.append(f"{r}{suit_map[s]}")
     
-    # Convert to engine format (2♠️ -> 2s)
-    clean_hand = []
-    for c in selected_hand:
-        r = c[:-1]
-        s_icon = c[-1]
-        s_char = {'♠️':'s', '♥️':'h', '♦️':'d', '♣️':'c'}[s_icon]
-        clean_hand.append(f"{r}{s_char}")
-        
     # Analyze Button
     if st.button("🧠 Analyze Hand"):
+        # We now use the safely constructed clean_hand
         best_hold, reason = engine.get_best_hold(clean_hand)
         
         # Display Results
@@ -249,13 +241,13 @@ with tab1:
         
         # Visualizing Hold
         hold_cols = st.columns(5)
-        for i, card in enumerate(selected_hand):
-            clean_card = clean_hand[i]
+        for i, card_disp in enumerate(selected_hand):
+            card_code = clean_hand[i]
             with hold_cols[i]:
-                if clean_card in best_hold:
-                    st.success(f"{card}\nHOLD")
+                if card_code in best_hold:
+                    st.success(f"{card_disp}\nHOLD")
                 else:
-                    st.error(f"{card}\nDISCARD")
+                    st.error(f"{card_disp}\nDISCARD")
 
 # ==========================================
 # TAB 2: SESSION LOGGER (Amy's Brain)
@@ -267,7 +259,6 @@ with tab2:
     with c1:
         if st.button("✅ I WON", type="primary"):
             st.session_state.history.append(1)
-            # Simple bankroll heuristic
             st.session_state.bankroll += st.session_state.denom * 5 # Approx win
             st.rerun()
             
