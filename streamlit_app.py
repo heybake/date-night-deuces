@@ -14,8 +14,14 @@ class DeucesWildEngine:
         # 1. Define Paytable
         if custom_paytable:
             self.paytable = custom_paytable
+            
+            # 🚨 ROYAL GUARD: SAFETY OVERRIDE 🚨
+            # If user entered 250 or 300 (standard 1-coin glass), 
+            # we force it to 800 to ensure Strategy assumes Max Bet Jackpot (4000).
+            if self.paytable.get("Natural Royal", 0) < 800:
+                self.paytable["Natural Royal"] = 800
+            
             # Auto-Detect Strategy based on 5OAK payout
-            # If 5OAK is low (< 15), we must play Defensively (keep flushes)
             five_oak_val = self.paytable.get("5 of a Kind", 12)
             self.strategy_mode = "DEFENSIVE" if five_oak_val < 15 else "AGGRESSIVE"
         else:
@@ -234,7 +240,7 @@ with st.sidebar:
         
         # Convert back to Dict
         custom_pt = dict(zip(edited_df["Hand"], edited_df["Payout"]))
-        st.caption("Strategy will auto-adapt based on 5-of-a-Kind value.")
+        st.caption("Bot auto-adjusts strategy & fixes Royal Bonus.")
         
     else:
         # Read-Only View
