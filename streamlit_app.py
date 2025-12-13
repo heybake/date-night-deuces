@@ -32,21 +32,25 @@ class DeucesWildEngine:
                 self.strategy_mode = "AGGRESSIVE"
 
     def get_rank_val(self, card):
-        # Robust parser for '10s', 'Ts', '2s'
         r = card[:-1].upper()
         if r == 'T': r = '10'
         mapping = {'2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13, 'A':14}
         return mapping.get(r, 0)
 
     def evaluate_hand(self, hand):
-        # 1. Parse
+        # 1. Parse Ranks & Deuces
         ranks = [c[:-1] for c in hand]
-        suits = [c[-1] for c in hand]
         deuces = ranks.count('2')
         non_deuce_ranks = sorted([self.get_rank_val(c) for c in hand if c[:-1] != '2'])
-        is_flush = len(set(suits)) == 1
         
-        # 2. Check Royals & Quads (High Priority)
+        # 2. Flush Logic (FIXED: Ignore Deuce Suits)
+        non_deuce_suits = [c[-1] for c in hand if c[:-1] != '2']
+        if not non_deuce_suits: 
+            is_flush = True # All deuces = Flush
+        else:
+            is_flush = len(set(non_deuce_suits)) == 1
+
+        # 3. Check Royals & Quads (High Priority)
         if is_flush and deuces == 0 and set(ranks) == {'10','J','Q','K','A'}: return "Natural Royal"
         if deuces == 4: return "Four Deuces"
         if is_flush and deuces > 0 and set(non_deuce_ranks).issubset({10,11,12,13,14}): return "Wild Royal"
@@ -55,40 +59,30 @@ class DeucesWildEngine:
         max_k = max(counts.values()) if counts else 0
         if deuces + max_k >= 5: return "5 of a Kind"
         
-        # 3. Straight Flush Logic (Hardened)
+        # 4. Straight Flush Logic
         if is_flush:
             if deuces > 0:
-                # With wilds, any span of non-deuces <= 4 works, 
-                # UNLESS it's a gap too big to fill.
-                # Actually, simply checking if (Max - Min) <= 4 usually works for SF 
-                # provided we don't have duplicates (flush guarantees no duplicates).
-                if not non_deuce_ranks: # 5 Deuces or something
-                     return "Straight Flush"
-                
+                if not non_deuce_ranks: return "Straight Flush"
                 span = non_deuce_ranks[-1] - non_deuce_ranks[0]
+                # Standard connected check
                 if span <= 4: return "Straight Flush"
-                
                 # Wheel Check: A,2,3,4,5 (A=14)
-                # If we have A(14) and small cards (3,4,5)
                 if 14 in non_deuce_ranks:
                     wheel_ranks = [x for x in non_deuce_ranks if x != 14]
-                    if not wheel_ranks or (wheel_ranks[-1] <= 5):
-                         return "Straight Flush"
+                    if not wheel_ranks or (wheel_ranks[-1] <= 5): return "Straight Flush"
             else:
                 # Natural SF
                 if (non_deuce_ranks[-1] - non_deuce_ranks[0] == 4): return "Straight Flush"
-                if set(non_deuce_ranks) == {14,2,3,4,5}: return "Straight Flush" # Natural Wheel
+                if set(non_deuce_ranks) == {14,2,3,4,5}: return "Straight Flush"
 
         if deuces + max_k >= 4: return "4 of a Kind"
         if deuces == 0 and 3 in counts.values() and 2 in counts.values(): return "Full House"
         if is_flush: return "Flush"
         
-        # 4. Straight Logic
+        # 5. Straight Logic
         unique_vals = sorted(list(set(non_deuce_ranks)))
         if len(unique_vals) + deuces >= 5:
-            # Standard span check
             if unique_vals[-1] - unique_vals[0] <= 4: return "Straight"
-            # Wheel check
             if 14 in unique_vals:
                 wheel_vals = [x for x in unique_vals if x != 14]
                 if not wheel_vals or (wheel_vals[-1] <= 5): return "Straight"
@@ -141,9 +135,8 @@ class DeucesWildEngine:
                  vals = sorted([self.get_rank_val(c) for c in combo])
                  suits = [c[-1] for c in combo]
                  if len(set(suits)) == 1:
-                     # Check span for SF draw
                      if (vals[-1] - vals[0] <= 4): return deuces + list(combo), "Straight Flush Draw."
-                     # Check Wheel SF Draw (A,3,4 or A,3,5 etc)
+                     # Wheel check
                      if 14 in vals:
                          wheel_v = [x for x in vals if x!=14]
                          if wheel_v and wheel_v[-1] <= 5: return deuces + list(combo), "Straight Flush Draw."
@@ -183,12 +176,9 @@ class DeucesWildEngine:
             return [], "Trash. Redraw 5."
 
     def calculate_outcome_probs(self, held_cards, iterations=2000):
-        # 1. Rebuild Deck (Explicitly)
         suits = ['s', 'h', 'd', 'c']
         ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
         full_deck = [f"{r}{s}" for r in ranks for s in suits]
-        
-        # 2. Remove Held
         for c in held_cards:
             if c in full_deck: full_deck.remove(c)
             
@@ -331,7 +321,6 @@ with tab2:
         st.subheader("🔮 Hit Probabilities")
         st.caption(f"Est. EV: {ev:.2f} Credits")
         
-        # Display logic
         display_order = ["Natural Royal", "Four Deuces", "Wild Royal", "5 of a Kind", 
                          "Straight Flush", "4 of a Kind", "Full House", "Flush", "Straight", "3 of a Kind"]
         
