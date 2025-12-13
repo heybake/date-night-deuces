@@ -59,7 +59,6 @@ class DeucesWildEngine:
         unique_vals = sorted(list(set(non_deuce_ranks)))
         if len(unique_vals) + deuces >= 5:
             if unique_vals[-1] - unique_vals[0] <= 4: return "Straight"
-            # Wheel straight check A-2-3-4-5
             if 14 in unique_vals:
                 wheel_vals = [1 if x==14 else x for x in unique_vals]
                 wheel_vals.sort()
@@ -190,27 +189,24 @@ st.markdown("""
         border-radius: 10px;
     }
     .big-font { font-size:30px !important; font-weight: bold; }
+    .stat-box { font-size:18px; font-weight:bold; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- CONFIG ---
-# The full casino ladder
 denoms = [0.01, 0.02, 0.05, 0.10, 0.25, 0.50, 1.00, 2.00, 5.00]
 
 # --- SIDEBAR SETTINGS ---
 with st.sidebar:
     st.header("⚙️ Settings")
-    
     variant_input = st.selectbox("Game Variant", ["NSUD (Aggressive)", "AIRPORT (Defensive)"])
     selected_variant = "NSUD" if "NSUD" in variant_input else "AIRPORT"
     
-    # Updated Denom Selector with full list
-    # Defaults to index 2 ($0.05) if not set
     if 'denom' not in st.session_state: st.session_state.denom = 0.05
     try:
         default_idx = denoms.index(st.session_state.denom)
     except ValueError:
-        default_idx = 2 # Fallback to Nickel
+        default_idx = 2
 
     denom_input = st.selectbox("Denomination", denoms, index=default_idx)
     st.session_state.denom = denom_input
@@ -218,13 +214,17 @@ with st.sidebar:
     if 'bankroll' not in st.session_state: st.session_state.bankroll = 100.00
     st.session_state.bankroll = st.number_input("Bankroll ($)", value=st.session_state.bankroll, step=1.00)
     
+    # NEW: Track Start Bankroll for Profit Calc
+    if 'start_bank' not in st.session_state: st.session_state.start_bank = 100.00
+    
     st.divider()
     st.info(f"Strategy: {selected_variant}")
     st.info(f"Bet Size: ${denom_input * 5:.2f}")
 
 engine = DeucesWildEngine(variant=selected_variant)
 
-if 'history' not in st.session_state: st.session_state.history = deque(maxlen=10)
+if 'history' not in st.session_state: st.session_state.history = deque(maxlen=10) # For Amy Gauge
+if 'full_history' not in st.session_state: st.session_state.full_history = [] # For Scorecard
 
 # --- HEADER: AMY'S BETTING GAUGE ---
 st.title("🦆 Amy Bot Advisor")
@@ -238,39 +238,24 @@ with col2:
     total_tracked = len(wins)
     
     recommendation = "HOLD"
-    
-    # Generic Amy Logic (Works for ANY Denom)
-    # Detects current step on the ladder
     try:
         current_step = denoms.index(st.session_state.denom)
-        
-        # Determine Window Size (Strictness)
-        # Low Stakes: 10 hands to prove yourself
-        # High Stakes: 5 hands to survive
         window_size = 10 if current_step <= 2 else 5 
-        
         recent_wins = wins[-window_size:] if len(wins) >= window_size else wins
-        recent_win_count = sum(recent_wins)
         recent_total = len(recent_wins)
         
         if recent_total >= window_size:
-            ratio = recent_win_count / recent_total
-            
+            ratio = sum(recent_wins) / recent_total
             if ratio >= 0.5:
-                # Winning -> Look for next step up
                 if current_step < len(denoms) - 1:
-                    next_val = denoms[current_step + 1]
-                    recommendation = f"🔥 HEAT UP! (${next_val:.2f})"
+                    recommendation = f"🔥 HEAT UP! (${denoms[current_step+1]:.2f})"
                 else:
                     recommendation = "🚀 MAX LEVEL!"
             else:
-                # Losing -> Look for step down
                 if current_step > 0:
-                    prev_val = denoms[current_step - 1]
-                    recommendation = f"❄️ COOL DOWN (${prev_val:.2f})"
+                    recommendation = f"❄️ COOL DOWN (${denoms[current_step-1]:.2f})"
         else:
             recommendation = "Collecting Data..."
-            
     except ValueError:
         recommendation = "Custom Denom"
 
@@ -284,7 +269,6 @@ tab1, tab2 = st.tabs(["✋ Hand Advisor", "💰 Session Logger"])
 # ==========================================
 with tab1:
     st.write("Select your cards:")
-    
     suits = ['♠️', '♥️', '♦️', '♣️']
     ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
     suit_map = {'♠️':'s', '♥️':'h', '♦️':'d', '♣️':'c'}
@@ -302,13 +286,12 @@ with tab1:
     
     if st.button("🧠 Analyze Hand"):
         best_hold, reason = engine.get_best_hold(clean_hand)
-        
-        with st.spinner("Simulating outcomes..."):
+        with st.spinner("Simulating..."):
             ev_val = engine.calculate_monte_carlo_ev(best_hold)
         
         st.markdown("---")
         st.subheader(f"Strategy: {reason}")
-        st.caption(f"📈 Expected Value (EV): {ev_val:.2f} Credits (approx ${ev_val * st.session_state.denom:.2f})")
+        st.caption(f"📈 EV: {ev_val:.2f} Credits (${ev_val * st.session_state.denom:.2f})")
         
         hold_cols = st.columns(5)
         for i, card_disp in enumerate(selected_hand):
@@ -325,22 +308,56 @@ with tab1:
 with tab2:
     st.info("Tap result AFTER the draw.")
     
+    # 1. Big Buttons
     c1, c2 = st.columns(2)
     with c1:
         if st.button("✅ I WON", type="primary"):
             st.session_state.history.append(1)
+            st.session_state.full_history.append(1)
             st.session_state.bankroll += st.session_state.denom * 5 
             st.rerun()
             
     with c2:
         if st.button("❌ I LOST"):
             st.session_state.history.append(0)
+            st.session_state.full_history.append(0)
             st.session_state.bankroll -= st.session_state.denom * 5
             st.rerun()
 
-    st.write("History: " + "".join(["✅" if x==1 else "❌" for x in st.session_state.history]))
+    # 2. Session Stats
+    st.markdown("---")
+    total_hands = len(st.session_state.full_history)
+    total_wins = sum(st.session_state.full_history)
+    win_rate = (total_wins / total_hands * 100) if total_hands > 0 else 0.0
+    profit = st.session_state.bankroll - st.session_state.start_bank
     
-    if st.button("Reset Session"):
+    s1, s2, s3 = st.columns(3)
+    s1.metric("Total Hands", total_hands)
+    s2.metric("Win Rate", f"{win_rate:.0f}%")
+    s3.metric("Profit/Loss", f"${profit:+.2f}")
+    
+    # 3. The 5-Hand Grid (Scorecard)
+    st.subheader("📜 History (5-Hand Cycles)")
+    
+    # Display in reverse order (newest on top) or sequential? 
+    # Usually sequential is better for reading a scorecard.
+    
+    history_list = st.session_state.full_history
+    if not history_list:
+        st.caption("No hands logged yet.")
+    else:
+        # Loop in chunks of 5
+        for i in range(0, len(history_list), 5):
+            batch = history_list[i : i+5]
+            batch_str = " ".join(["✅" if x==1 else "❌" for x in batch])
+            
+            # Labeling the range (e.g. "Hands 1-5")
+            st.text(f"Hands {i+1}-{i+len(batch)}:  {batch_str}")
+
+    st.markdown("---")
+    if st.button("🗑️ Reset Session Data"):
         st.session_state.bankroll = 100.00
+        st.session_state.start_bank = 100.00
         st.session_state.history.clear()
+        st.session_state.full_history.clear()
         st.rerun()
