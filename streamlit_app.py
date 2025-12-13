@@ -14,10 +14,8 @@ class DeucesWildEngine:
         # 1. Define Paytable
         if custom_paytable:
             self.paytable = custom_paytable
-            # Royal Guard
             if self.paytable.get("Natural Royal", 0) < 800:
                 self.paytable["Natural Royal"] = 800
-            
             five_oak_val = self.paytable.get("5 of a Kind", 12)
             self.strategy_mode = "DEFENSIVE" if five_oak_val < 15 else "AGGRESSIVE"
         else:
@@ -298,12 +296,22 @@ with tab2:
 
     # 3. CONVERT AND SOLVE
     if len(selected_cards) == 5:
-        # Convert to clean codes for engine
+        # ROBUST PARSING FIX for Emojis
         clean_hand = []
         for c_disp in selected_cards:
-            r = c_disp[:-1]
-            s_icon = c_disp[-1]
-            clean_hand.append(f"{r}{suit_map[s_icon]}")
+            # We iterate through keys to see which suit suffix matches
+            found_suit = False
+            for s_emoji, s_code in suit_map.items():
+                if c_disp.endswith(s_emoji):
+                    # Remove the emoji to get the rank
+                    r = c_disp.replace(s_emoji, "")
+                    clean_hand.append(f"{r}{s_code}")
+                    found_suit = True
+                    break
+            
+            # Fallback (Should never happen if list is constant)
+            if not found_suit:
+                clean_hand.append("2s") 
 
         if st.button("🧠 Solve Hand", type="primary"):
             best_hold, reason = engine.get_best_hold(clean_hand)
