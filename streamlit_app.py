@@ -1,6 +1,7 @@
 import streamlit as st
 import itertools
 import random
+import pandas as pd
 from collections import deque, defaultdict
 
 # ==========================================
@@ -175,6 +176,22 @@ with st.sidebar:
     st.header("⚙️ Config")
     variant_input = st.selectbox("Variant", ["NSUD (Aggressive)", "AIRPORT (Defensive)"])
     selected_variant = "NSUD" if "NSUD" in variant_input else "AIRPORT"
+    
+    # PAYTABLE VIEWER
+    with st.expander("📊 View Paytable (Check Machine)"):
+        # Create a clean dataframe for display
+        # We need to instantiate a temporary engine to get the dict
+        temp_engine = DeucesWildEngine(selected_variant)
+        pt_data = {
+            "Hand": list(temp_engine.paytable.keys()),
+            "1 Coin": list(temp_engine.paytable.values()),
+            "5 Coins": [x * 5 for x in temp_engine.paytable.values()]
+        }
+        df = pd.DataFrame(pt_data)
+        # Filter out 'Nothing' row for cleanliness
+        df = df[df["Hand"] != "Nothing"]
+        st.dataframe(df, hide_index=True)
+
     st.info(f"Mode: {selected_variant}")
 
 engine = DeucesWildEngine(variant=selected_variant)
