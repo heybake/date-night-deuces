@@ -8,47 +8,90 @@ from collections import deque, defaultdict
 # 🧬 CORE LOGIC: DEUCES WILD ENGINE
 # ==========================================
 class DeucesWildEngine:
-    def __init__(self, variant="NSUD"):
+    def __init__(self, variant="NSUD", custom_paytable=None):
         self.variant = variant
-        self.paytable = {
-            "Natural Royal": 800, "Four Deuces": 200, "Wild Royal": 25,
-            "5 of a Kind": 16 if variant == "NSUD" else 12,
-            "Straight Flush": 10 if variant == "NSUD" else 9,
-            "4 of a Kind": 4, "Full House": 4, "Flush": 3, "Straight": 2, "3 of a Kind": 1, "Nothing": 0
-        }
+        
+        # 1. Define Paytable
+        if custom_paytable:
+            self.paytable = custom_paytable
+            if self.paytable.get("Natural Royal", 0) < 800:
+                self.paytable["Natural Royal"] = 800
+            five_oak_val = self.paytable.get("5 of a Kind", 12)
+            self.strategy_mode = "DEFENSIVE" if five_oak_val < 15 else "AGGRESSIVE"
+        else:
+            self.paytable = {
+                "Natural Royal": 800, "Four Deuces": 200, "Wild Royal": 25,
+                "5 of a Kind": 16 if variant == "NSUD" else 12,
+                "Straight Flush": 10 if variant == "NSUD" else 9,
+                "4 of a Kind": 4, "Full House": 4, "Flush": 3, "Straight": 2, "3 of a Kind": 1, "Nothing": 0
+            }
+            if variant == "AIRPORT":
+                self.paytable.update({"Wild Royal": 20, "5 of a Kind": 12, "Straight Flush": 9})
+                self.strategy_mode = "DEFENSIVE"
+            else:
+                self.strategy_mode = "AGGRESSIVE"
 
     def get_rank_val(self, card):
-        r = card[:-1] 
+        # Robust parser for '10s', 'Ts', '2s'
+        r = card[:-1].upper()
+        if r == 'T': r = '10'
         mapping = {'2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13, 'A':14}
         return mapping.get(r, 0)
 
     def evaluate_hand(self, hand):
+        # 1. Parse
         ranks = [c[:-1] for c in hand]
         suits = [c[-1] for c in hand]
         deuces = ranks.count('2')
         non_deuce_ranks = sorted([self.get_rank_val(c) for c in hand if c[:-1] != '2'])
         is_flush = len(set(suits)) == 1
         
+        # 2. Check Royals & Quads (High Priority)
         if is_flush and deuces == 0 and set(ranks) == {'10','J','Q','K','A'}: return "Natural Royal"
         if deuces == 4: return "Four Deuces"
         if is_flush and deuces > 0 and set(non_deuce_ranks).issubset({10,11,12,13,14}): return "Wild Royal"
         
         counts = {x:non_deuce_ranks.count(x) for x in set(non_deuce_ranks)}
         max_k = max(counts.values()) if counts else 0
-        
         if deuces + max_k >= 5: return "5 of a Kind"
+        
+        # 3. Straight Flush Logic (Hardened)
         if is_flush:
-            if not non_deuce_ranks or (non_deuce_ranks[-1] - non_deuce_ranks[0] <= 4): return "Straight Flush"
-            if 14 in non_deuce_ranks and (non_deuce_ranks[0] == 5): return "Straight Flush" # Wheel
+            if deuces > 0:
+                # With wilds, any span of non-deuces <= 4 works, 
+                # UNLESS it's a gap too big to fill.
+                # Actually, simply checking if (Max - Min) <= 4 usually works for SF 
+                # provided we don't have duplicates (flush guarantees no duplicates).
+                if not non_deuce_ranks: # 5 Deuces or something
+                     return "Straight Flush"
+                
+                span = non_deuce_ranks[-1] - non_deuce_ranks[0]
+                if span <= 4: return "Straight Flush"
+                
+                # Wheel Check: A,2,3,4,5 (A=14)
+                # If we have A(14) and small cards (3,4,5)
+                if 14 in non_deuce_ranks:
+                    wheel_ranks = [x for x in non_deuce_ranks if x != 14]
+                    if not wheel_ranks or (wheel_ranks[-1] <= 5):
+                         return "Straight Flush"
+            else:
+                # Natural SF
+                if (non_deuce_ranks[-1] - non_deuce_ranks[0] == 4): return "Straight Flush"
+                if set(non_deuce_ranks) == {14,2,3,4,5}: return "Straight Flush" # Natural Wheel
 
         if deuces + max_k >= 4: return "4 of a Kind"
         if deuces == 0 and 3 in counts.values() and 2 in counts.values(): return "Full House"
         if is_flush: return "Flush"
         
+        # 4. Straight Logic
         unique_vals = sorted(list(set(non_deuce_ranks)))
         if len(unique_vals) + deuces >= 5:
+            # Standard span check
             if unique_vals[-1] - unique_vals[0] <= 4: return "Straight"
-            if 14 in unique_vals and unique_vals[0] <= 5: return "Straight" # Wheel
+            # Wheel check
+            if 14 in unique_vals:
+                wheel_vals = [x for x in unique_vals if x != 14]
+                if not wheel_vals or (wheel_vals[-1] <= 5): return "Straight"
             
         if deuces + max_k >= 3: return "3 of a Kind"
         return "Nothing"
@@ -58,15 +101,15 @@ class DeucesWildEngine:
         non_deuces = [c for c in hand if not c.startswith('2')]
         current_rank = self.evaluate_hand(hand)
         
-        # --- 4 Deuces ---
+        # 4 Deuces
         if len(deuces) == 4: return hand, "Victory! Hold All."
         
-        # --- 3 Deuces ---
+        # 3 Deuces
         if len(deuces) == 3:
             if current_rank in ["Wild Royal", "5 of a Kind"]: return hand, "Jackpot! Hold All."
             return deuces, "Hold 3 Deuces."
             
-        # --- 2 Deuces ---
+        # 2 Deuces
         if len(deuces) == 2:
             if current_rank in ["Wild Royal", "5 of a Kind", "Straight Flush"]: return hand, "Monster! Hold All."
             if current_rank == "4 of a Kind": return hand, "Hold Made Quads."
@@ -76,14 +119,14 @@ class DeucesWildEngine:
                 suits = {c[-1] for c in combo}
                 if len(suits) == 1 and vals.issubset(royals):
                     return deuces + list(combo), "Hunt the Wild Royal."
-            if self.variant == "AIRPORT" and current_rank == "Flush": return hand, "Defensive: Hold Flush."
+            if self.strategy_mode == "DEFENSIVE" and current_rank == "Flush": return hand, "Defensive: Hold Flush."
             return deuces, "Hold 2 Deuces."
             
-        # --- 1 Deuce ---
+        # 1 Deuce
         if len(deuces) == 1:
             if current_rank in ["Wild Royal", "5 of a Kind", "Straight Flush", "Full House"]: return hand, "Hold Made Hand."
             if current_rank == "4 of a Kind": return hand, "Hold Quads."
-            if self.variant == "AIRPORT":
+            if self.strategy_mode == "DEFENSIVE":
                 if current_rank == "Flush": return hand, "Defensive: Hold Flush."
                 if current_rank == "Straight": return hand, "Defensive: Hold Straight."
 
@@ -93,10 +136,17 @@ class DeucesWildEngine:
                 suits = {c[-1] for c in combo}
                 if len(suits) == 1 and vals.issubset(royals): return deuces + list(combo), "Shoot for Wild Royal."
             
+            # Straight Flush Draw Detection
             for combo in itertools.combinations(non_deuces, 3):
                  vals = sorted([self.get_rank_val(c) for c in combo])
                  suits = [c[-1] for c in combo]
-                 if len(set(suits)) == 1 and (vals[-1] - vals[0] <= 4): return deuces + list(combo), "Straight Flush Draw."
+                 if len(set(suits)) == 1:
+                     # Check span for SF draw
+                     if (vals[-1] - vals[0] <= 4): return deuces + list(combo), "Straight Flush Draw."
+                     # Check Wheel SF Draw (A,3,4 or A,3,5 etc)
+                     if 14 in vals:
+                         wheel_v = [x for x in vals if x!=14]
+                         if wheel_v and wheel_v[-1] <= 5: return deuces + list(combo), "Straight Flush Draw."
 
             for combo in itertools.combinations(non_deuces, 2):
                 vals = {self.get_rank_val(c) for c in combo}
@@ -104,7 +154,7 @@ class DeucesWildEngine:
                 if len(suits) == 1 and vals.issubset(royals): return deuces + list(combo), "3 to Wild Royal."
             return deuces, "Hold Deuce."
 
-        # --- 0 Deuces ---
+        # 0 Deuces
         if len(deuces) == 0:
             if current_rank in ["Natural Royal", "Straight Flush", "4 of a Kind", "Full House", "Flush", "Straight", "3 of a Kind"]: 
                 return hand, "Made Hand. Hold."
@@ -133,10 +183,12 @@ class DeucesWildEngine:
             return [], "Trash. Redraw 5."
 
     def calculate_outcome_probs(self, held_cards, iterations=2000):
-        # Calculates EV and Probabilities
+        # 1. Rebuild Deck (Explicitly)
         suits = ['s', 'h', 'd', 'c']
         ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
         full_deck = [f"{r}{s}" for r in ranks for s in suits]
+        
+        # 2. Remove Held
         for c in held_cards:
             if c in full_deck: full_deck.remove(c)
             
@@ -171,36 +223,43 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR (Minimal) ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Config")
-    variant_input = st.selectbox("Variant", ["NSUD (Aggressive)", "AIRPORT (Defensive)"])
-    selected_variant = "NSUD" if "NSUD" in variant_input else "AIRPORT"
+    variant_input = st.selectbox("Variant", ["NSUD (Aggressive)", "AIRPORT (Defensive)", "Custom (Edit)"])
     
-    # READ-ONLY PAYTABLE
-    with st.expander("📊 View Paytable (Check Machine)"):
-        temp_engine = DeucesWildEngine(selected_variant)
-        pt_data = {
-            "Hand": list(temp_engine.paytable.keys()),
-            "1 Coin": list(temp_engine.paytable.values()),
-            "5 Coins": [x * 5 for x in temp_engine.paytable.values()]
-        }
-        df = pd.DataFrame(pt_data)
-        df = df[df["Hand"] != "Nothing"]
-        st.dataframe(df, hide_index=True)
-
+    custom_pt = None
+    selected_variant = "NSUD"
+    if "NSUD" in variant_input: selected_variant = "NSUD"
+    elif "AIRPORT" in variant_input: selected_variant = "AIRPORT"
+    else: selected_variant = "Custom"
+    
+    if selected_variant == "Custom":
+        st.warning("⚠️ Editing Paytable (1 Coin)")
+        if 'custom_pt_df' not in st.session_state:
+            default_data = {
+                "Natural Royal": 800, "Four Deuces": 200, "Wild Royal": 20, 
+                "5 of a Kind": 12, "Straight Flush": 9, "4 of a Kind": 4, 
+                "Full House": 4, "Flush": 3, "Straight": 2, "3 of a Kind": 1
+            }
+            st.session_state.custom_pt_df = pd.DataFrame(list(default_data.items()), columns=["Hand", "Payout"])
+        edited_df = st.data_editor(st.session_state.custom_pt_df, hide_index=True, key="pt_editor")
+        custom_pt = dict(zip(edited_df["Hand"], edited_df["Payout"]))
+    else:
+        with st.expander("📊 View Paytable"):
+            temp_engine = DeucesWildEngine(selected_variant)
+            pt_data = {"Hand": list(temp_engine.paytable.keys()), "1 Coin": list(temp_engine.paytable.values())}
+            st.dataframe(pd.DataFrame(pt_data), hide_index=True)
+            
     st.info(f"Mode: {selected_variant}")
 
-engine = DeucesWildEngine(variant=selected_variant)
+engine = DeucesWildEngine(variant=selected_variant, custom_paytable=custom_pt)
 
 if 'history' not in st.session_state: st.session_state.history = []
 
-# --- HEADER: MOMENTUM GAUGE ---
+# --- HEADER ---
 st.title("🦆 Amy Bot: Momentum")
-
-# Calculate Stats
 total_hands = len(st.session_state.history)
-wins = sum(st.session_state.history)
 last_5 = st.session_state.history[-5:] if total_hands >= 5 else st.session_state.history
 wins_in_last_5 = sum(last_5)
 count_in_last_5 = len(last_5)
@@ -209,20 +268,16 @@ if count_in_last_5 < 5:
     msg = f"Collecting Data ({count_in_last_5}/5)..."
     style = "rec-cold" 
 elif wins_in_last_5 >= 3:
-    msg = f"🔥 HEAT UP! ({wins_in_last_5}/5 Wins) -> CONSIDER RAISING"
+    msg = f"🔥 HEAT UP! ({wins_in_last_5}/5 Wins)"
     style = "rec-hot"
 else:
-    msg = f"❄️ COOL DOWN ({wins_in_last_5}/5 Wins) -> STAY MINIMUM"
+    msg = f"❄️ COOL DOWN ({wins_in_last_5}/5 Wins)"
     style = "rec-cold"
-
 st.markdown(f"""<div class='rec-box {style}'><h3>{msg}</h3></div>""", unsafe_allow_html=True)
 
 # --- TABS ---
-tab1, tab2 = st.tabs(["📊 Scorecard (Logger)", "✋ Hand Helper"])
+tab1, tab2 = st.tabs(["📊 Scorecard", "✋ Hand Helper"])
 
-# ==========================================
-# TAB 1: SCORECARD
-# ==========================================
 with tab1:
     c1, c2 = st.columns(2)
     with c1:
@@ -233,80 +288,57 @@ with tab1:
         if st.button("❌ LOST"):
             st.session_state.history.append(0)
             st.rerun()
-            
     st.divider()
-    st.subheader("Session History")
-    if not st.session_state.history:
-        st.write("No hands played yet.")
+    if not st.session_state.history: st.write("No hands played.")
     else:
-        history = st.session_state.history
-        for i in range(0, len(history), 5):
-            batch = history[i : i+5]
-            batch_icons = "".join(["✅ " if x==1 else "❌ " for x in batch])
-            st.write(f"**Hands {i+1}-{i+len(batch)}:** {batch_icons}")
-
-    st.markdown("---")
-    if st.button("🗑️ Reset All Data"):
+        hist = st.session_state.history
+        for i in range(0, len(hist), 5):
+            batch = hist[i:i+5]
+            icons = "".join(["✅ " if x==1 else "❌ " for x in batch])
+            st.write(f"**Hands {i+1}-{i+len(batch)}:** {icons}")
+    if st.button("🗑️ Reset"):
         st.session_state.history = []
         st.rerun()
 
-# ==========================================
-# TAB 2: HAND HELPER
-# ==========================================
 with tab2:
-    st.caption("Only use for tricky hands.")
+    st.caption("Select cards to analyze.")
     suits = ['♠️', '♥️', '♦️', '♣️']
     ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
     suit_map = {'♠️':'s', '♥️':'h', '♦️':'d', '♣️':'c'}
-
     cols = st.columns(5)
-    selected_hand = []
     clean_hand = []
-    
+    selected_hand = []
     for i in range(5):
         with cols[i]:
             r = st.selectbox("", ranks, key=f"r{i}")
             s = st.selectbox("", suits, key=f"s{i}")
-            selected_hand.append(f"{r}{s}")
             clean_hand.append(f"{r}{suit_map[s]}")
-    
+            selected_hand.append(f"{r}{s}")
+            
     if st.button("🧠 Solve"):
         best_hold, reason = engine.get_best_hold(clean_hand)
+        with st.spinner("Simulating..."):
+            ev, probs = engine.calculate_outcome_probs(best_hold)
         
-        # Run Simulation
-        with st.spinner("Calculating Probabilities..."):
-            ev_val, probs = engine.calculate_outcome_probs(best_hold)
-        
-        # Display Best Hold
         st.success(f"Strategy: {reason}")
+        if selected_variant == "Custom": st.caption(f"(Auto-Strategy: {engine.strategy_mode})")
         
-        held_display = []
-        for j, c_code in enumerate(clean_hand):
-            if c_code in best_hold:
-                held_display.append(selected_hand[j])
-        st.write(f"**HOLD:** {' '.join(held_display)}")
+        # Visualize Hold
+        hold_str = " ".join([selected_hand[i] for i,c in enumerate(clean_hand) if c in best_hold])
+        st.write(f"**HOLD:** {hold_str}")
         
         st.divider()
-        
-        # Display Outcome Probabilities
         st.subheader("🔮 Hit Probabilities")
-        st.caption(f"Estimated EV: {ev_val:.2f} Credits")
+        st.caption(f"Est. EV: {ev:.2f} Credits")
         
-        # Priority sort order for display
-        display_order = [
-            "Natural Royal", "Four Deuces", "Wild Royal", "5 of a Kind", 
-            "Straight Flush", "4 of a Kind", "Full House", "Flush", "Straight", "3 of a Kind"
-        ]
+        # Display logic
+        display_order = ["Natural Royal", "Four Deuces", "Wild Royal", "5 of a Kind", 
+                         "Straight Flush", "4 of a Kind", "Full House", "Flush", "Straight", "3 of a Kind"]
         
-        for hand_type in display_order:
-            p = probs.get(hand_type, 0.0)
-            if p > 0.001: 
+        for h in display_order:
+            p = probs.get(h, 0.0)
+            if p > 0.001:
                 pct = p * 100
-                if p < 0.50: 
-                    one_in = int(round(1/p))
-                    context_str = f" (**1 in {one_in}**)"
-                else:
-                    context_str = ""
-                    
-                st.write(f"**{hand_type}:** {pct:.1f}%{context_str}")
+                ctx = f" (**1 in {int(round(1/p))}**)" if p < 0.50 else ""
+                st.write(f"**{h}:** {pct:.1f}%{ctx}")
                 st.progress(min(p, 1.0))
