@@ -1,7 +1,7 @@
 import streamlit as st
 import itertools
 import random
-from collections import deque
+from collections import deque, defaultdict
 
 # ==========================================
 # 🧬 CORE LOGIC: DEUCES WILD ENGINE
@@ -38,7 +38,7 @@ class DeucesWildEngine:
         if deuces + max_k >= 5: return "5 of a Kind"
         if is_flush:
             if not non_deuce_ranks or (non_deuce_ranks[-1] - non_deuce_ranks[0] <= 4): return "Straight Flush"
-            if 14 in non_deuce_ranks and (non_deuce_ranks[0] == 5): return "Straight Flush" # Simple Wheel check
+            if 14 in non_deuce_ranks and (non_deuce_ranks[0] == 5): return "Straight Flush" # Wheel
 
         if deuces + max_k >= 4: return "4 of a Kind"
         if deuces == 0 and 3 in counts.values() and 2 in counts.values(): return "Full House"
@@ -47,7 +47,7 @@ class DeucesWildEngine:
         unique_vals = sorted(list(set(non_deuce_ranks)))
         if len(unique_vals) + deuces >= 5:
             if unique_vals[-1] - unique_vals[0] <= 4: return "Straight"
-            if 14 in unique_vals and unique_vals[0] <= 5: return "Straight" # Simple Wheel check
+            if 14 in unique_vals and unique_vals[0] <= 5: return "Straight" # Wheel
             
         if deuces + max_k >= 3: return "3 of a Kind"
         return "Nothing"
@@ -131,20 +131,28 @@ class DeucesWildEngine:
 
             return [], "Trash. Redraw 5."
 
-    def calculate_monte_carlo_ev(self, held_cards, iterations=500):
+    def calculate_outcome_probs(self, held_cards, iterations=2000):
+        # Calculates EV and Probabilities of hitting specific hands
         suits = ['s', 'h', 'd', 'c']
         ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
         full_deck = [f"{r}{s}" for r in ranks for s in suits]
         for c in held_cards:
             if c in full_deck: full_deck.remove(c)
+            
         total_payout = 0
+        counts = defaultdict(int)
         draw_count = 5 - len(held_cards)
+        
         for _ in range(iterations):
             drawn = random.sample(full_deck, draw_count)
             final_hand = held_cards + drawn
             rank_name = self.evaluate_hand(final_hand)
+            counts[rank_name] += 1
             total_payout += self.paytable.get(rank_name, 0)
-        return (total_payout / iterations) * 5 
+            
+        ev = (total_payout / iterations) * 5
+        probs = {k: v/iterations for k, v in counts.items()}
+        return ev, probs
 
 # ==========================================
 # 🎨 STREAMLIT UI
@@ -155,10 +163,10 @@ st.set_page_config(page_title="Amy Bot Lite", page_icon="🦆")
 st.markdown("""
 <style>
     div.stButton > button { width: 100%; height: 70px; font-size: 24px; border-radius: 12px; }
-    .big-stat { font-size: 40px; font-weight: bold; text-align: center; }
     .rec-box { padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 20px;}
     .rec-hot { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
     .rec-cold { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .prob-bar { margin-bottom: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -179,16 +187,13 @@ st.title("🦆 Amy Bot: Momentum")
 # Calculate Stats
 total_hands = len(st.session_state.history)
 wins = sum(st.session_state.history)
-
-# Logic: Look at last 5 hands
 last_5 = st.session_state.history[-5:] if total_hands >= 5 else st.session_state.history
 wins_in_last_5 = sum(last_5)
 count_in_last_5 = len(last_5)
 
-# Recommendation Engine
 if count_in_last_5 < 5:
     msg = f"Collecting Data ({count_in_last_5}/5)..."
-    style = "rec-cold" # Default
+    style = "rec-cold" 
 elif wins_in_last_5 >= 3:
     msg = f"🔥 HEAT UP! ({wins_in_last_5}/5 Wins) -> CONSIDER RAISING"
     style = "rec-hot"
@@ -202,7 +207,7 @@ st.markdown(f"""<div class='rec-box {style}'><h3>{msg}</h3></div>""", unsafe_all
 tab1, tab2 = st.tabs(["📊 Scorecard (Logger)", "✋ Hand Helper"])
 
 # ==========================================
-# TAB 1: SCORECARD (The Main Tool)
+# TAB 1: SCORECARD
 # ==========================================
 with tab1:
     c1, c2 = st.columns(2)
@@ -216,14 +221,10 @@ with tab1:
             st.rerun()
             
     st.divider()
-    
-    # VISUAL HISTORY (Grouped by 5)
     st.subheader("Session History")
     if not st.session_state.history:
         st.write("No hands played yet.")
     else:
-        # Reverse loop to show newest on top? No, scorecard usually top-down.
-        # Let's show "Batches"
         history = st.session_state.history
         for i in range(0, len(history), 5):
             batch = history[i : i+5]
@@ -236,7 +237,7 @@ with tab1:
         st.rerun()
 
 # ==========================================
-# TAB 2: HAND HELPER (Strategy)
+# TAB 2: HAND HELPER
 # ==========================================
 with tab2:
     st.caption("Only use for tricky hands.")
@@ -257,14 +258,35 @@ with tab2:
     
     if st.button("🧠 Solve"):
         best_hold, reason = engine.get_best_hold(clean_hand)
-        ev_val = engine.calculate_monte_carlo_ev(best_hold, iterations=200) # Fast sim
         
+        # Run Simulation
+        with st.spinner("Calculating Probabilities..."):
+            ev_val, probs = engine.calculate_outcome_probs(best_hold)
+        
+        # Display Best Hold
         st.success(f"Strategy: {reason}")
-        st.caption(f"EV: {ev_val:.2f} Credits")
         
-        # Simple text display of hold
         held_display = []
         for j, c_code in enumerate(clean_hand):
             if c_code in best_hold:
                 held_display.append(selected_hand[j])
         st.write(f"**HOLD:** {' '.join(held_display)}")
+        
+        st.divider()
+        
+        # Display Outcome Probabilities
+        st.subheader("🔮 Hit Probabilities")
+        st.caption(f"Estimated EV: {ev_val:.2f} Credits")
+        
+        # Priority sort order for display
+        display_order = [
+            "Natural Royal", "Four Deuces", "Wild Royal", "5 of a Kind", 
+            "Straight Flush", "4 of a Kind", "Full House", "Flush", "Straight", "3 of a Kind"
+        ]
+        
+        for hand_type in display_order:
+            p = probs.get(hand_type, 0.0)
+            if p > 0.001: # Show if > 0.1% chance
+                pct = p * 100
+                st.write(f"**{hand_type}:** {pct:.1f}%")
+                st.progress(min(p, 1.0))
