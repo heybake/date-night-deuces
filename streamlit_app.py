@@ -8,14 +8,31 @@ from collections import deque, defaultdict
 # 🧬 CORE LOGIC: DEUCES WILD ENGINE
 # ==========================================
 class DeucesWildEngine:
-    def __init__(self, variant="NSUD"):
+    def __init__(self, variant="NSUD", custom_paytable=None):
         self.variant = variant
-        self.paytable = {
-            "Natural Royal": 800, "Four Deuces": 200, "Wild Royal": 25,
-            "5 of a Kind": 16 if variant == "NSUD" else 12,
-            "Straight Flush": 10 if variant == "NSUD" else 9,
-            "4 of a Kind": 4, "Full House": 4, "Flush": 3, "Straight": 2, "3 of a Kind": 1, "Nothing": 0
-        }
+        
+        # 1. Define Paytable
+        if custom_paytable:
+            self.paytable = custom_paytable
+            # Auto-Detect Strategy based on 5OAK payout
+            # If 5OAK is low (< 15), we must play Defensively (keep flushes)
+            five_oak_val = self.paytable.get("5 of a Kind", 12)
+            self.strategy_mode = "DEFENSIVE" if five_oak_val < 15 else "AGGRESSIVE"
+        else:
+            # Standard Presets
+            self.paytable = {
+                "Natural Royal": 800, "Four Deuces": 200, "Wild Royal": 25,
+                "5 of a Kind": 16, "Straight Flush": 10, "4 of a Kind": 4, 
+                "Full House": 4, "Flush": 3, "Straight": 2, "3 of a Kind": 1, "Nothing": 0
+            }
+            if variant == "AIRPORT":
+                self.paytable.update({
+                    "Wild Royal": 20, "5 of a Kind": 12, "Straight Flush": 9
+                })
+                self.strategy_mode = "DEFENSIVE"
+            else:
+                # NSUD
+                self.strategy_mode = "AGGRESSIVE"
 
     def get_rank_val(self, card):
         r = card[:-1] 
@@ -76,14 +93,18 @@ class DeucesWildEngine:
                 suits = {c[-1] for c in combo}
                 if len(suits) == 1 and vals.issubset(royals):
                     return deuces + list(combo), "Hunt the Wild Royal."
-            if self.variant == "AIRPORT" and current_rank == "Flush": return hand, "Defensive: Hold Flush."
+            
+            # Dynamic Strategy Switch
+            if self.strategy_mode == "DEFENSIVE" and current_rank == "Flush": return hand, "Defensive: Hold Flush."
             return deuces, "Hold 2 Deuces."
             
         # --- 1 Deuce ---
         if len(deuces) == 1:
             if current_rank in ["Wild Royal", "5 of a Kind", "Straight Flush", "Full House"]: return hand, "Hold Made Hand."
             if current_rank == "4 of a Kind": return hand, "Hold Quads."
-            if self.variant == "AIRPORT":
+            
+            # Dynamic Strategy Switch
+            if self.strategy_mode == "DEFENSIVE":
                 if current_rank == "Flush": return hand, "Defensive: Hold Flush."
                 if current_rank == "Straight": return hand, "Defensive: Hold Straight."
 
@@ -133,7 +154,7 @@ class DeucesWildEngine:
             return [], "Trash. Redraw 5."
 
     def calculate_outcome_probs(self, held_cards, iterations=2000):
-        # Calculates EV and Probabilities of hitting specific hands
+        # Calculates EV and Probabilities
         suits = ['s', 'h', 'd', 'c']
         ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
         full_deck = [f"{r}{s}" for r in ranks for s in suits]
@@ -171,30 +192,67 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR (Minimal) ---
+# --- SIDEBAR (Config & Custom Paytable) ---
 with st.sidebar:
     st.header("⚙️ Config")
-    variant_input = st.selectbox("Variant", ["NSUD (Aggressive)", "AIRPORT (Defensive)"])
-    selected_variant = "NSUD" if "NSUD" in variant_input else "AIRPORT"
     
-    # PAYTABLE VIEWER
-    with st.expander("📊 View Paytable (Check Machine)"):
-        # Create a clean dataframe for display
-        # We need to instantiate a temporary engine to get the dict
-        temp_engine = DeucesWildEngine(selected_variant)
-        pt_data = {
-            "Hand": list(temp_engine.paytable.keys()),
-            "1 Coin": list(temp_engine.paytable.values()),
-            "5 Coins": [x * 5 for x in temp_engine.paytable.values()]
-        }
-        df = pd.DataFrame(pt_data)
-        # Filter out 'Nothing' row for cleanliness
-        df = df[df["Hand"] != "Nothing"]
-        st.dataframe(df, hide_index=True)
+    # Variant Selection
+    variant_options = ["NSUD (Aggressive)", "AIRPORT (Defensive)", "Custom (Edit)"]
+    variant_input = st.selectbox("Variant", variant_options)
+    
+    custom_pt = None
+    selected_variant = "NSUD"
+    
+    if "NSUD" in variant_input: selected_variant = "NSUD"
+    elif "AIRPORT" in variant_input: selected_variant = "AIRPORT"
+    else: selected_variant = "Custom"
+    
+    # LOGIC FOR PAYTABLE DISPLAY / EDIT
+    st.divider()
+    
+    if selected_variant == "Custom":
+        st.warning("⚠️ Editing Paytable (1 Coin)")
+        
+        # Initialize with Airport defaults if not present
+        if 'custom_pt_df' not in st.session_state:
+            default_data = {
+                "Natural Royal": 800, "Four Deuces": 200, "Wild Royal": 20, 
+                "5 of a Kind": 12, "Straight Flush": 9, "4 of a Kind": 4, 
+                "Full House": 4, "Flush": 3, "Straight": 2, "3 of a Kind": 1
+            }
+            st.session_state.custom_pt_df = pd.DataFrame(
+                list(default_data.items()), columns=["Hand", "Payout"]
+            )
+            
+        # Interactive Editor
+        edited_df = st.data_editor(
+            st.session_state.custom_pt_df, 
+            hide_index=True, 
+            column_config={"Payout": st.column_config.NumberColumn("1 Coin Payout")},
+            key="pt_editor"
+        )
+        
+        # Convert back to Dict
+        custom_pt = dict(zip(edited_df["Hand"], edited_df["Payout"]))
+        st.caption("Strategy will auto-adapt based on 5-of-a-Kind value.")
+        
+    else:
+        # Read-Only View
+        with st.expander("📊 View Paytable (Check Machine)"):
+            temp_engine = DeucesWildEngine(selected_variant)
+            pt_data = {
+                "Hand": list(temp_engine.paytable.keys()),
+                "1 Coin": list(temp_engine.paytable.values()),
+                "5 Coins": [x * 5 for x in temp_engine.paytable.values()]
+            }
+            df = pd.DataFrame(pt_data)
+            df = df[df["Hand"] != "Nothing"]
+            st.dataframe(df, hide_index=True)
 
     st.info(f"Mode: {selected_variant}")
 
-engine = DeucesWildEngine(variant=selected_variant)
+# Initialize Engine (Pass custom_pt if exists)
+engine = DeucesWildEngine(variant=selected_variant, custom_paytable=custom_pt)
 
 if 'history' not in st.session_state: st.session_state.history = []
 
@@ -282,6 +340,9 @@ with tab2:
         
         # Display Best Hold
         st.success(f"Strategy: {reason}")
+        if selected_variant == "Custom":
+             strat_label = "AGGRESSIVE" if engine.strategy_mode == "AGGRESSIVE" else "DEFENSIVE"
+             st.caption(f"(Auto-Detected Strategy: {strat_label})")
         
         held_display = []
         for j, c_code in enumerate(clean_hand):
@@ -303,11 +364,9 @@ with tab2:
         
         for hand_type in display_order:
             p = probs.get(hand_type, 0.0)
-            if p > 0.001: # Show if > 0.1% chance
+            if p > 0.001: 
                 pct = p * 100
-                
-                # Context Logic: "1 in X"
-                if p < 0.50: # Only useful for non-sure things
+                if p < 0.50: 
                     one_in = int(round(1/p))
                     context_str = f" (**1 in {one_in}**)"
                 else:
