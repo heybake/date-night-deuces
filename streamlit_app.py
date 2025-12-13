@@ -288,5 +288,13 @@ with tab2:
             p = probs.get(hand_type, 0.0)
             if p > 0.001: # Show if > 0.1% chance
                 pct = p * 100
-                st.write(f"**{hand_type}:** {pct:.1f}%")
+                
+                # Context Logic: "1 in X"
+                if p < 0.50: # Only useful for non-sure things
+                    one_in = int(round(1/p))
+                    context_str = f" (**1 in {one_in}**)"
+                else:
+                    context_str = ""
+                    
+                st.write(f"**{hand_type}:** {pct:.1f}%{context_str}")
                 st.progress(min(p, 1.0))
