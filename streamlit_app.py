@@ -14,11 +14,11 @@ class DeucesWildEngine:
         self.paytable = {
             "Natural Royal": 800, 
             "Four Deuces": 200, 
-            "Wild Royal": 25 if variant == "NSUD" else 20, # Variant diff
-            "5 of a Kind": 16 if variant == "NSUD" else 12, # Variant diff
-            "Straight Flush": 10 if variant == "NSUD" else 9, # Variant diff
+            "Wild Royal": 25 if variant == "NSUD" else 20, 
+            "5 of a Kind": 16 if variant == "NSUD" else 12,
+            "Straight Flush": 10 if variant == "NSUD" else 9,
             "4 of a Kind": 4, 
-            "Full House": 4 if variant == "NSUD" else 4, # Usually 4/3 or 4/4
+            "Full House": 4 if variant == "NSUD" else 4,
             "Flush": 3, 
             "Straight": 2, 
             "3 of a Kind": 1, 
@@ -92,7 +92,6 @@ class DeucesWildEngine:
                 if len(suits) == 1 and vals.issubset(royals):
                     return deuces + list(combo), "Hunt the Wild Royal."
             
-            # Variant Split: Airport holds Flush, NSUD breaks it
             if self.variant == "AIRPORT" and current_rank == "Flush":
                  return hand, "Defensive: Hold Flush."
                  
@@ -103,7 +102,6 @@ class DeucesWildEngine:
             if current_rank in ["Wild Royal", "5 of a Kind", "Straight Flush", "Full House"]: return hand, "Hold Made Hand."
             if current_rank == "4 of a Kind": return hand, "Hold Quads."
             
-            # Variant Split: Airport holds Straight/Flush, NSUD often breaks
             if self.variant == "AIRPORT":
                 if current_rank == "Flush": return hand, "Defensive: Hold Flush."
                 if current_rank == "Straight": return hand, "Defensive: Hold Straight."
@@ -116,7 +114,6 @@ class DeucesWildEngine:
                     return deuces + list(combo), "Shoot for Wild Royal."
             
             for combo in itertools.combinations(non_deuces, 3):
-                 # Simple check for Straight Flush draw (consecutive suited)
                  vals = sorted([self.get_rank_val(c) for c in combo])
                  suits = [c[-1] for c in combo]
                  if len(set(suits)) == 1 and (vals[-1] - vals[0] <= 4):
@@ -158,16 +155,13 @@ class DeucesWildEngine:
             return [], "Trash. Redraw 5."
 
     def calculate_monte_carlo_ev(self, held_cards, iterations=1000):
-        # 1. Build Deck
         suits = ['s', 'h', 'd', 'c']
         ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
         full_deck = [f"{r}{s}" for r in ranks for s in suits]
         
-        # 2. Remove Held Cards
         for c in held_cards:
             if c in full_deck: full_deck.remove(c)
             
-        # 3. Simulate
         total_payout = 0
         draw_count = 5 - len(held_cards)
         
@@ -179,7 +173,7 @@ class DeucesWildEngine:
             total_payout += credits
             
         avg_credits = total_payout / iterations
-        return avg_credits * 5 # Max bet normalized
+        return avg_credits * 5 
 
 # ==========================================
 # 🎨 STREAMLIT UI
@@ -187,7 +181,6 @@ class DeucesWildEngine:
 
 st.set_page_config(page_title="Amy Bot Advisor", page_icon="🦆")
 
-# --- CSS Styling ---
 st.markdown("""
 <style>
     div.stButton > button {
@@ -200,29 +193,35 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- CONFIG ---
+# The full casino ladder
+denoms = [0.01, 0.02, 0.05, 0.10, 0.25, 0.50, 1.00, 2.00, 5.00]
+
 # --- SIDEBAR SETTINGS ---
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # 1. Variant Selector
     variant_input = st.selectbox("Game Variant", ["NSUD (Aggressive)", "AIRPORT (Defensive)"])
     selected_variant = "NSUD" if "NSUD" in variant_input else "AIRPORT"
     
-    # 2. Denom Selector
-    denom_input = st.selectbox("Denomination", [0.05, 0.10, 0.25, 1.00], index=0)
+    # Updated Denom Selector with full list
+    # Defaults to index 2 ($0.05) if not set
+    if 'denom' not in st.session_state: st.session_state.denom = 0.05
+    try:
+        default_idx = denoms.index(st.session_state.denom)
+    except ValueError:
+        default_idx = 2 # Fallback to Nickel
+
+    denom_input = st.selectbox("Denomination", denoms, index=default_idx)
+    st.session_state.denom = denom_input
     
-    # 3. Bankroll Editor
     if 'bankroll' not in st.session_state: st.session_state.bankroll = 100.00
     st.session_state.bankroll = st.number_input("Bankroll ($)", value=st.session_state.bankroll, step=1.00)
-    
-    # Store settings in session
-    st.session_state.denom = denom_input
     
     st.divider()
     st.info(f"Strategy: {selected_variant}")
     st.info(f"Bet Size: ${denom_input * 5:.2f}")
 
-# Initialize Engine with selected variant
 engine = DeucesWildEngine(variant=selected_variant)
 
 if 'history' not in st.session_state: st.session_state.history = deque(maxlen=10)
@@ -240,17 +239,41 @@ with col2:
     
     recommendation = "HOLD"
     
-    # Amy Logic
-    if st.session_state.denom == 0.05:
-        if total_tracked >= 10 and (win_count / total_tracked) >= 0.5:
-            recommendation = "🔥 HEAT UP! ($0.10)"
-    elif st.session_state.denom == 0.10:
-        recent = wins[-5:] if len(wins) >= 5 else wins
-        if sum(recent)/len(recent) < 0.5:
-            recommendation = "❄️ COOL DOWN ($0.05)"
-        elif len(wins) >= 10 and (sum(wins[-5:])/5) >= 0.5:
-             recommendation = "🚀 MAX BET ($0.25)"
-    
+    # Generic Amy Logic (Works for ANY Denom)
+    # Detects current step on the ladder
+    try:
+        current_step = denoms.index(st.session_state.denom)
+        
+        # Determine Window Size (Strictness)
+        # Low Stakes: 10 hands to prove yourself
+        # High Stakes: 5 hands to survive
+        window_size = 10 if current_step <= 2 else 5 
+        
+        recent_wins = wins[-window_size:] if len(wins) >= window_size else wins
+        recent_win_count = sum(recent_wins)
+        recent_total = len(recent_wins)
+        
+        if recent_total >= window_size:
+            ratio = recent_win_count / recent_total
+            
+            if ratio >= 0.5:
+                # Winning -> Look for next step up
+                if current_step < len(denoms) - 1:
+                    next_val = denoms[current_step + 1]
+                    recommendation = f"🔥 HEAT UP! (${next_val:.2f})"
+                else:
+                    recommendation = "🚀 MAX LEVEL!"
+            else:
+                # Losing -> Look for step down
+                if current_step > 0:
+                    prev_val = denoms[current_step - 1]
+                    recommendation = f"❄️ COOL DOWN (${prev_val:.2f})"
+        else:
+            recommendation = "Collecting Data..."
+            
+    except ValueError:
+        recommendation = "Custom Denom"
+
     st.metric("Current Denom", f"${st.session_state.denom:.2f}", recommendation)
 
 # --- TABS ---
@@ -278,14 +301,11 @@ with tab1:
             clean_hand.append(f"{r}{suit_map[s]}")
     
     if st.button("🧠 Analyze Hand"):
-        # 1. Get Strategy
         best_hold, reason = engine.get_best_hold(clean_hand)
         
-        # 2. Calculate EV (Monte Carlo)
         with st.spinner("Simulating outcomes..."):
             ev_val = engine.calculate_monte_carlo_ev(best_hold)
         
-        # 3. Display
         st.markdown("---")
         st.subheader(f"Strategy: {reason}")
         st.caption(f"📈 Expected Value (EV): {ev_val:.2f} Credits (approx ${ev_val * st.session_state.denom:.2f})")
