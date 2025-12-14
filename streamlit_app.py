@@ -203,7 +203,7 @@ st.markdown("""
 with st.sidebar:
     st.title("🦆 Amy Bot")
     
-    # 🆕 MAIN MENU (Replaces Tabs)
+    # 🆕 MAIN MENU
     page_selection = st.radio(
         "Navigate", 
         ["📊 Scorecard", "✋ Hand Helper", "📖 Rules"],
@@ -213,34 +213,23 @@ with st.sidebar:
     st.divider()
     st.header("⚙️ Config")
     
-    variant_input = st.selectbox("Variant", ["NSUD (Aggressive)", "AIRPORT (Defensive)", "Custom (Edit)"])
+    # REMOVED CUSTOM OPTION
+    variant_input = st.selectbox("Variant", ["NSUD (Aggressive)", "AIRPORT (Defensive)"])
     
-    custom_pt = None
     selected_variant = "NSUD"
-    if "NSUD" in variant_input: selected_variant = "NSUD"
-    elif "AIRPORT" in variant_input: selected_variant = "AIRPORT"
-    else: selected_variant = "Custom"
-    
-    if selected_variant == "Custom":
-        st.warning("⚠️ Editing Paytable (1 Coin)")
-        if 'custom_pt_df' not in st.session_state:
-            default_data = {
-                "Natural Royal": 800, "Four Deuces": 200, "Wild Royal": 20, 
-                "5 of a Kind": 12, "Straight Flush": 9, "4 of a Kind": 4, 
-                "Full House": 4, "Flush": 3, "Straight": 2, "3 of a Kind": 1
-            }
-            st.session_state.custom_pt_df = pd.DataFrame(list(default_data.items()), columns=["Hand", "Payout"])
-        edited_df = st.data_editor(st.session_state.custom_pt_df, hide_index=True, key="pt_editor")
-        custom_pt = dict(zip(edited_df["Hand"], edited_df["Payout"]))
+    if "AIRPORT" in variant_input: 
+        selected_variant = "AIRPORT"
     else:
-        with st.expander("📊 View Paytable"):
-            temp_engine = DeucesWildEngine(selected_variant)
-            pt_data = {"Hand": list(temp_engine.paytable.keys()), "1 Coin": list(temp_engine.paytable.values())}
-            st.dataframe(pd.DataFrame(pt_data), hide_index=True)
+        selected_variant = "NSUD"
+
+    with st.expander("📊 View Paytable"):
+        temp_engine = DeucesWildEngine(selected_variant)
+        pt_data = {"Hand": list(temp_engine.paytable.keys()), "1 Coin": list(temp_engine.paytable.values())}
+        st.dataframe(pd.DataFrame(pt_data), hide_index=True)
             
     st.info(f"Mode: {selected_variant}")
 
-engine = DeucesWildEngine(variant=selected_variant, custom_paytable=custom_pt)
+engine = DeucesWildEngine(variant=selected_variant)
 
 if 'history' not in st.session_state: st.session_state.history = []
 
@@ -362,7 +351,6 @@ elif page_selection == "✋ Hand Helper":
                 ev, probs = engine.calculate_outcome_probs(best_hold)
             
             st.success(f"Strategy: {reason}")
-            if selected_variant == "Custom": st.caption(f"(Auto-Strategy: {engine.strategy_mode})")
             
             held_display_list = []
             for i, c_code in enumerate(clean_hand):
