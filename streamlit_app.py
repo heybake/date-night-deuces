@@ -170,10 +170,43 @@ class DeucesWildEngine:
 
 st.set_page_config(page_title="Amy Bot", page_icon="🦆")
 
-# Custom CSS for Big Buttons
+# Custom CSS for Big Buttons and Mobile Dashboard
 st.markdown("""
 <style>
     div.stButton > button { width: 100%; height: 70px; font-size: 24px; border-radius: 12px; }
+    
+    /* Mobile-Friendly Horizontal Dashboard */
+    .dashboard-container {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+    .metric-card {
+        background-color: #262730; /* Dark Theme Compatible */
+        border: 1px solid #41424b;
+        border-radius: 8px;
+        padding: 8px;
+        text-align: center;
+        flex: 1;
+        font-family: sans-serif;
+    }
+    .metric-val {
+        font-size: 1.2rem;
+        font-weight: bold;
+        display: block;
+    }
+    .metric-lbl {
+        font-size: 0.75rem;
+        color: #9ea3b0;
+        text-transform: uppercase;
+        display: block;
+    }
+    /* Dynamic Colors */
+    .hot { color: #4cea72 !important; border-color: #1e5e2e !important; background-color: #0e2b14 !important; }
+    .cold { color: #ff6c6c !important; border-color: #661a1a !important; background-color: #2d0b0b !important; }
+    .neutral { color: #ffffff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -212,31 +245,44 @@ if page_selection == "📊 Scorecard":
     
     # Session Metrics
     session_pct = (total_wins / total_hands * 100) if total_hands > 0 else 0
-    session_delta = "normal" if session_pct >= 45 else "off"
+    # Hit frequency in Deuces is ~45%
+    s_class = "hot" if session_pct >= 45 else "neutral"
 
     # Last 10 Metrics
     last_10 = history[-10:]
     l10_wins = sum(last_10)
     l10_pct = (l10_wins / len(last_10) * 100) if last_10 else 0
-    l10_delta = "normal" if l10_wins >= 6 else "inverse" if l10_wins <= 3 else "off"
+    l10_class = "hot" if l10_wins >= 6 else "cold" if l10_wins <= 3 else "neutral"
 
     # Last 5 Metrics
     last_5 = history[-5:]
     l5_wins = sum(last_5)
     l5_pct = (l5_wins / len(last_5) * 100) if last_5 else 0
-    l5_delta = "normal" if l5_wins >= 3 else "inverse" if l5_wins <= 1 else "off"
+    l5_class = "hot" if l5_wins >= 3 else "cold" if l5_wins <= 1 else "neutral"
 
-    # --- 📊 COMPACT DASHBOARD ---
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Session", f"{session_pct:.0f}%", f"{total_wins}/{total_hands} Wins")
-    c2.metric("Last 10", f"{l10_pct:.0f}%", f"{l10_wins} Wins", delta_color=l10_delta)
-    c3.metric("Last 5", f"{l5_pct:.0f}%", f"{l5_wins} Wins", delta_color=l5_delta)
+    # --- 📊 FLEXBOX DASHBOARD (Forced Horizontal on Mobile) ---
+    dashboard_html = f"""
+    <div class="dashboard-container">
+        <div class="metric-card {s_class}">
+            <span class="metric-lbl">Session</span>
+            <span class="metric-val">{session_pct:.0f}%</span>
+        </div>
+        <div class="metric-card {l10_class}">
+            <span class="metric-lbl">Last 10</span>
+            <span class="metric-val">{l10_pct:.0f}%</span>
+        </div>
+        <div class="metric-card {l5_class}">
+            <span class="metric-lbl">Last 5</span>
+            <span class="metric-val">{l5_pct:.0f}%</span>
+        </div>
+    </div>
+    """
+    st.markdown(dashboard_html, unsafe_allow_html=True)
+    st.caption(f"Hands: {total_hands} | Wins: {total_wins}")
     
     st.divider()
 
     # --- 📜 HISTORY WINDOW (Standard Chronological) ---
-    # We display hands 1-5, then 6-10, just like a list that grows downwards.
-    # The container lets you scroll if it gets too long.
     with st.container(height=300, border=True):
         if not history: 
             st.write("No hands played.")
@@ -247,11 +293,7 @@ if page_selection == "📊 Scorecard":
                 batch = history[i:i+5]
                 start_num = i + 1
                 end_num = i + len(batch)
-                
-                # Standard Left-to-Right icons (First hand in batch -> Last hand in batch)
                 icons = "".join(["✅ " if x==1 else "❌ " for x in batch])
-                
-                # Display format: Hands 1-5: ✅ ❌ ❌ ✅ ✅
                 st.write(f"**Hands {start_num}-{end_num}:** {icons}")
 
     # --- 🕹️ FLOATING BUTTONS (Fixed Position) ---
