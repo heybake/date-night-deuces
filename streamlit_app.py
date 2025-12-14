@@ -226,34 +226,40 @@ if page_selection == "📊 Scorecard":
     l5_pct = (l5_wins / len(last_5) * 100) if last_5 else 0
     l5_delta = "normal" if l5_wins >= 3 else "inverse" if l5_wins <= 1 else "off"
 
-    # --- 📊 THE COMPACT DASHBOARD ---
-    # We use 3 columns to display metrics side-by-side instead of vertically
+    # --- 📊 COMPACT DASHBOARD ---
     c1, c2, c3 = st.columns(3)
-    
-    c1.metric(
-        label="Session Win %",
-        value=f"{session_pct:.0f}%",
-        delta=f"{total_wins}/{total_hands} Wins" if total_hands > 0 else None,
-        delta_color="off" # Neutral color for session count
-    )
-    
-    c2.metric(
-        label="Last 10",
-        value=f"{l10_pct:.0f}%",
-        delta=f"{l10_wins}/10 Wins" if len(last_10) == 10 else "Building...",
-        delta_color=l10_delta
-    )
-    
-    c3.metric(
-        label="Last 5",
-        value=f"{l5_pct:.0f}%",
-        delta=f"{l5_wins}/5 Wins" if len(last_5) == 5 else "Building...",
-        delta_color=l5_delta
-    )
+    c1.metric("Session", f"{session_pct:.0f}%", f"{total_wins}/{total_hands} Wins")
+    c2.metric("Last 10", f"{l10_pct:.0f}%", f"{l10_wins} Wins", delta_color=l10_delta)
+    c3.metric("Last 5", f"{l5_pct:.0f}%", f"{l5_wins} Wins", delta_color=l5_delta)
     
     st.divider()
 
-    # --- GAME BUTTONS ---
+    # --- 📜 HISTORY WINDOW (Scrollable) ---
+    # This box keeps the history constrained so it doesn't push the buttons off screen.
+    # We display Newest Hands First so the latest result is always at the top of the window.
+    with st.container(height=300, border=True):
+        if not history: 
+            st.write("No hands played.")
+            st.caption("Results will appear here.")
+        else:
+            # REVERSE HISTORY: Newest First
+            rev_history = list(reversed(history))
+            
+            for i in range(0, len(rev_history), 5):
+                batch = rev_history[i:i+5]
+                end_num = total_hands - i
+                start_num = max(1, end_num - 4)
+                
+                # Batch logic: if we have [1, 0], we want to show ✅ ❌
+                # Since batch is reversed (Newest...Oldest in that chunk), 
+                # we display it directly to read Left-to-Right as Newest-to-Oldest? 
+                # Or re-reverse to read Oldest-to-Newest within the chunk?
+                # Let's keep it simple: Show the icons.
+                icons = "".join(["✅ " if x==1 else "❌ " for x in batch])
+                st.write(f"**Hands {end_num}-{start_num}:** {icons}")
+
+    # --- 🕹️ FLOATING BUTTONS (Fixed Position) ---
+    # These sit below the scrollable container, meaning they never move.
     b1, b2 = st.columns(2)
     with b1:
         if st.button("✅ WON"):
@@ -264,29 +270,6 @@ if page_selection == "📊 Scorecard":
             st.session_state.history.append(0)
             st.rerun()
             
-    st.divider()
-    
-    # --- HISTORY LOG ---
-    if not history: st.write("No hands played.")
-    else:
-        # Show newest hands at the TOP for less scrolling
-        # Reverse the list for display logic
-        rev_history = list(reversed(history))
-        
-        # Display in chunks of 5
-        for i in range(0, len(rev_history), 5):
-            batch = rev_history[i:i+5]
-            # Calculate actual hand numbers (e.g. 10-6, 5-1)
-            end_num = total_hands - i
-            start_num = max(1, end_num - 4)
-            
-            # Since batch is reversed (Newest first), we might want to display icons left-to-right as Old->New or New->Old?
-            # Standard log usually reads Left=Oldest in batch. Let's un-reverse the batch for the icon string.
-            batch_icons = list(reversed(batch)) 
-            icons = "".join(["✅ " if x==1 else "❌ " for x in batch_icons])
-            
-            st.write(f"**Hands {start_num}-{end_num}:** {icons}")
-
     if st.button("🗑️ Reset"):
         st.session_state.history = []
         st.rerun()
