@@ -184,7 +184,7 @@ st.markdown("""
         margin-bottom: 10px;
     }
     .metric-card {
-        background-color: #262730; /* Dark Theme Compatible */
+        background-color: #262730; 
         border: 1px solid #41424b;
         border-radius: 8px;
         padding: 8px;
@@ -245,7 +245,6 @@ if page_selection == "📊 Scorecard":
     
     # Session Metrics
     session_pct = (total_wins / total_hands * 100) if total_hands > 0 else 0
-    # Hit frequency in Deuces is ~45%
     s_class = "hot" if session_pct >= 45 else "neutral"
 
     # Last 10 Metrics
@@ -282,19 +281,39 @@ if page_selection == "📊 Scorecard":
     
     st.divider()
 
-    # --- 📜 HISTORY WINDOW (Standard Chronological) ---
+    # --- 📜 HISTORY WINDOW (Newest Hands First) ---
     with st.container(height=300, border=True):
         if not history: 
             st.write("No hands played.")
             st.caption("Results will appear here.")
         else:
-            # Iterate normally from start of list to end
-            for i in range(0, total_hands, 5):
-                batch = history[i:i+5]
-                start_num = i + 1
-                end_num = i + len(batch)
+            # CALCULATE BATCHES: Total Hands -> 1 (Newest at Top)
+            # Example: 17 Hands.
+            # Row 1: 16-17
+            # Row 2: 11-15
+            # Row 3: 6-10
+            # Row 4: 1-5
+            
+            # Step 1: Calculate how many rows of 5 we need
+            # We use ceiling division logic
+            import math
+            num_rows = math.ceil(total_hands / 5)
+            
+            # Step 2: Iterate backwards from the last row index down to 0
+            for row_idx in range(num_rows - 1, -1, -1):
+                start_index = row_idx * 5
+                end_index = start_index + 5
+                
+                # Get the slice (Standard chronological order within the slice)
+                batch = history[start_index : end_index]
+                
+                # Display Numbers
+                start_hand_num = start_index + 1
+                end_hand_num = start_index + len(batch)
+                
                 icons = "".join(["✅ " if x==1 else "❌ " for x in batch])
-                st.write(f"**Hands {start_num}-{end_num}:** {icons}")
+                
+                st.write(f"**Hands {start_hand_num}-{end_hand_num}:** {icons}")
 
     # --- 🕹️ FLOATING BUTTONS (Fixed Position) ---
     b1, b2 = st.columns(2)
