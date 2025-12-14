@@ -199,12 +199,47 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- 💡 THE POP-UP RULES (Dialog) ---
+@st.dialog("🧬 The Airport Protocol: Wallet Card")
+def show_rules():
+    st.markdown("""
+    **1. THE VACUUM CHECK (First 15 Hands)**
+    * **Trigger:** Bankroll drops 25% (to $30)
+    * **Action:** 🛑 HARD STOP LOSS.
+    
+    ---
+    
+    **2. THE TEASE (Sub-Surface Check)**
+    * **Trigger:** You spike profit, but lose it all within 5 hands.
+    * **Action:** 🛑 EXIT IMMEDIATELY.
+    
+    ---
+    
+    **3. THE ZOMBIE ZONE (Hand 40)**
+    * **Trigger:** You are "Underwater" (<$40) but not dead.
+    * **Action:** ⏱️ SET TIMER (5 Mins Max). Do NOT grind.
+    
+    ---
+    
+    **4. THE HARD DECK (Hand 66)**
+    * **Trigger:** Hand 66 reached with no win.
+    * **Action:** 🛑 WALK AWAY. (Math Dead)
+    
+    ---
+    
+    **🎯 THE SNIPER EXCEPTION (WIN)**
+    * **Trigger:** Hit +20% Profit ($48.00+)
+    * **Action:** 💰 CASH OUT. (Volatility Win)
+    """)
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Config")
     
-    # 🔗 NAVIGATION LINK
-    st.page_link("pages/rules.py", label="📖 Airport Protocol Rules", icon="✈️")
+    # 🆕 BUTTON TRIGGERS THE POP-UP
+    if st.button("📖 Airport Protocol Rules"):
+        show_rules()
+    
     st.divider()
     
     variant_input = st.selectbox("Variant", ["NSUD (Aggressive)", "AIRPORT (Defensive)", "Custom (Edit)"])
@@ -234,154 +269,4 @@ with st.sidebar:
             
     st.info(f"Mode: {selected_variant}")
 
-engine = DeucesWildEngine(variant=selected_variant, custom_paytable=custom_pt)
-
-if 'history' not in st.session_state: st.session_state.history = []
-
-# --- HEADER ---
-st.title("🦆 Amy Bot: Momentum")
-
-total_hands = len(st.session_state.history)
-total_wins = sum(st.session_state.history)
-
-# --- INDICATOR 1: LAST 5 HANDS ---
-last_5 = st.session_state.history[-5:] if total_hands >= 5 else st.session_state.history
-wins_in_last_5 = sum(last_5)
-count_in_last_5 = len(last_5)
-
-if count_in_last_5 < 5:
-    msg_5 = f"Collecting Data ({count_in_last_5}/5)..."
-    style_5 = "rec-cold" 
-elif wins_in_last_5 >= 3:
-    msg_5 = f"🔥 HEAT UP! ({wins_in_last_5}/5 Wins)"
-    style_5 = "rec-hot"
-else:
-    msg_5 = f"❄️ COOL DOWN ({wins_in_last_5}/5 Wins)"
-    style_5 = "rec-cold"
-
-# --- INDICATOR 2: LAST 10 HANDS ---
-last_10 = st.session_state.history[-10:] if total_hands >= 10 else st.session_state.history
-wins_in_last_10 = sum(last_10)
-count_in_last_10 = len(last_10)
-
-if count_in_last_10 < 10:
-    msg_10 = f"Collecting Data ({count_in_last_10}/10)..."
-    style_10 = "rec-cold"
-elif wins_in_last_10 >= 6:
-    msg_10 = f"🔥 HEAT UP! ({wins_in_last_10}/10 Wins)"
-    style_10 = "rec-hot"
-else:
-    msg_10 = f"❄️ COOL DOWN ({wins_in_last_10}/10 Wins)"
-    style_10 = "rec-cold"
-
-# --- INDICATOR 3: TOTAL SESSION ---
-if total_hands == 0:
-    msg_total = "Start Playing..."
-    style_total = "rec-cold"
-elif (total_wins / total_hands) >= 0.45:
-    msg_total = f"🔥 SESSION HOT! ({total_wins}/{total_hands} Wins)"
-    style_total = "rec-hot"
-else:
-    msg_total = f"❄️ SESSION COLD ({total_wins}/{total_hands} Wins)"
-    style_total = "rec-cold"
-
-st.markdown(f"""<div class='rec-box {style_total}'><h3>{msg_total}</h3></div>""", unsafe_allow_html=True)
-st.markdown(f"""<div class='rec-box {style_10}'><h3>{msg_10}</h3></div>""", unsafe_allow_html=True)
-st.markdown(f"""<div class='rec-box {style_5}'><h3>{msg_5}</h3></div>""", unsafe_allow_html=True)
-
-# --- TABS ---
-tab1, tab2 = st.tabs(["📊 Scorecard", "✋ Hand Helper"])
-
-with tab1:
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("✅ WON"):
-            st.session_state.history.append(1)
-            st.rerun()
-    with c2:
-        if st.button("❌ LOST"):
-            st.session_state.history.append(0)
-            st.rerun()
-    st.divider()
-    if not st.session_state.history: st.write("No hands played.")
-    else:
-        hist = st.session_state.history
-        for i in range(0, len(hist), 5):
-            batch = hist[i:i+5]
-            icons = "".join(["✅ " if x==1 else "❌ " for x in batch])
-            st.write(f"**Hands {i+1}-{i+len(batch)}:** {icons}")
-    if st.button("🗑️ Reset"):
-        st.session_state.history = []
-        st.rerun()
-
-with tab2:
-    st.caption("Tap the box below to select your 5 cards.")
-    
-    # 1. GENERATE DECK FOR UI
-    suits = ['♠️', '♥️', '♦️', '♣️']
-    ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
-    deck_display = [f"{r}{s}" for r in ranks for s in suits]
-    
-    # Map back to code: "10♠️" -> "10s"
-    suit_map = {'♠️':'s', '♥️':'h', '♦️':'d', '♣️':'c'}
-    
-    # 2. MULTISELECT WIDGET (Mobile Friendly)
-    selected_cards = st.multiselect(
-        "Card Selector", 
-        options=deck_display, 
-        max_selections=5,
-        placeholder="Tap to pick 5 cards..."
-    )
-
-    # 3. CONVERT AND SOLVE
-    if len(selected_cards) == 5:
-        # ROBUST PARSING FIX for Emojis
-        clean_hand = []
-        for c_disp in selected_cards:
-            # We iterate through keys to see which suit suffix matches
-            found_suit = False
-            for s_emoji, s_code in suit_map.items():
-                if c_disp.endswith(s_emoji):
-                    # Remove the emoji to get the rank
-                    r = c_disp.replace(s_emoji, "")
-                    clean_hand.append(f"{r}{s_code}")
-                    found_suit = True
-                    break
-            
-            # Fallback (Should never happen if list is constant)
-            if not found_suit:
-                clean_hand.append("2s") 
-
-        if st.button("🧠 Solve Hand", type="primary"):
-            best_hold, reason = engine.get_best_hold(clean_hand)
-            with st.spinner("Simulating..."):
-                ev, probs = engine.calculate_outcome_probs(best_hold)
-            
-            st.success(f"Strategy: {reason}")
-            if selected_variant == "Custom": st.caption(f"(Auto-Strategy: {engine.strategy_mode})")
-            
-            # Visualize Hold
-            # Find the display version of the held cards
-            held_display_list = []
-            for i, c_code in enumerate(clean_hand):
-                if c_code in best_hold:
-                    held_display_list.append(selected_cards[i])
-            
-            st.write(f"**HOLD:** {' '.join(held_display_list)}")
-            
-            st.divider()
-            st.subheader("🔮 Hit Probabilities")
-            st.caption(f"Est. EV: {ev:.2f} Credits")
-            
-            display_order = ["Natural Royal", "Four Deuces", "Wild Royal", "5 of a Kind", 
-                            "Straight Flush", "4 of a Kind", "Full House", "Flush", "Straight", "3 of a Kind"]
-            
-            for h in display_order:
-                p = probs.get(h, 0.0)
-                if p > 0.001:
-                    pct = p * 100
-                    ctx = f" (**1 in {int(round(1/p))}**)" if p < 0.50 else ""
-                    st.write(f"**{h}:** {pct:.1f}%{ctx}")
-                    st.progress(min(p, 1.0))
-    else:
-        st.info(f"Select {5 - len(selected_cards)} more cards.")
+engine = DeucesWildEngine
