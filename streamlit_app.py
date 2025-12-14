@@ -237,8 +237,9 @@ if 'history' not in st.session_state: st.session_state.history = []
 st.title("🦆 Amy Bot: Momentum")
 
 total_hands = len(st.session_state.history)
+total_wins = sum(st.session_state.history)
 
-# --- INDICATOR 1: LAST 5 HANDS ---
+# --- INDICATOR 1: LAST 5 HANDS (Short Term) ---
 last_5 = st.session_state.history[-5:] if total_hands >= 5 else st.session_state.history
 wins_in_last_5 = sum(last_5)
 count_in_last_5 = len(last_5)
@@ -253,7 +254,7 @@ else:
     msg_5 = f"❄️ COOL DOWN ({wins_in_last_5}/5 Wins)"
     style_5 = "rec-cold"
 
-# --- INDICATOR 2: LAST 10 HANDS ---
+# --- INDICATOR 2: LAST 10 HANDS (Medium Term) ---
 last_10 = st.session_state.history[-10:] if total_hands >= 10 else st.session_state.history
 wins_in_last_10 = sum(last_10)
 count_in_last_10 = len(last_10)
@@ -268,9 +269,23 @@ else:
     msg_10 = f"❄️ COOL DOWN ({wins_in_last_10}/10 Wins)"
     style_10 = "rec-cold"
 
-# Display Indicators
-st.markdown(f"""<div class='rec-box {style_5}'><h3>{msg_5}</h3></div>""", unsafe_allow_html=True)
+# --- INDICATOR 3: TOTAL SESSION (Long Term) ---
+# Note: Deuces Wild Hit Frequency is ~45.3%. 
+# We use 45% as the baseline for "Hot" over a long session.
+if total_hands == 0:
+    msg_total = "Start Playing..."
+    style_total = "rec-cold"
+elif (total_wins / total_hands) >= 0.45:
+    msg_total = f"🔥 SESSION HOT! ({total_wins}/{total_hands} Wins)"
+    style_total = "rec-hot"
+else:
+    msg_total = f"❄️ SESSION COLD ({total_wins}/{total_hands} Wins)"
+    style_total = "rec-cold"
+
+# Display Indicators Stacked
+st.markdown(f"""<div class='rec-box {style_total}'><h3>{msg_total}</h3></div>""", unsafe_allow_html=True)
 st.markdown(f"""<div class='rec-box {style_10}'><h3>{msg_10}</h3></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class='rec-box {style_5}'><h3>{msg_5}</h3></div>""", unsafe_allow_html=True)
 
 
 # --- TABS ---
