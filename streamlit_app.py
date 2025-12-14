@@ -235,21 +235,43 @@ if 'history' not in st.session_state: st.session_state.history = []
 
 # --- HEADER ---
 st.title("🦆 Amy Bot: Momentum")
+
 total_hands = len(st.session_state.history)
+
+# --- INDICATOR 1: LAST 5 HANDS ---
 last_5 = st.session_state.history[-5:] if total_hands >= 5 else st.session_state.history
 wins_in_last_5 = sum(last_5)
 count_in_last_5 = len(last_5)
 
 if count_in_last_5 < 5:
-    msg = f"Collecting Data ({count_in_last_5}/5)..."
-    style = "rec-cold" 
+    msg_5 = f"Collecting Data ({count_in_last_5}/5)..."
+    style_5 = "rec-cold" 
 elif wins_in_last_5 >= 3:
-    msg = f"🔥 HEAT UP! ({wins_in_last_5}/5 Wins)"
-    style = "rec-hot"
+    msg_5 = f"🔥 HEAT UP! ({wins_in_last_5}/5 Wins)"
+    style_5 = "rec-hot"
 else:
-    msg = f"❄️ COOL DOWN ({wins_in_last_5}/5 Wins)"
-    style = "rec-cold"
-st.markdown(f"""<div class='rec-box {style}'><h3>{msg}</h3></div>""", unsafe_allow_html=True)
+    msg_5 = f"❄️ COOL DOWN ({wins_in_last_5}/5 Wins)"
+    style_5 = "rec-cold"
+
+# --- INDICATOR 2: LAST 10 HANDS ---
+last_10 = st.session_state.history[-10:] if total_hands >= 10 else st.session_state.history
+wins_in_last_10 = sum(last_10)
+count_in_last_10 = len(last_10)
+
+if count_in_last_10 < 10:
+    msg_10 = f"Collecting Data ({count_in_last_10}/10)..."
+    style_10 = "rec-cold"
+elif wins_in_last_10 >= 6:
+    msg_10 = f"🔥 HEAT UP! ({wins_in_last_10}/10 Wins)"
+    style_10 = "rec-hot"
+else:
+    msg_10 = f"❄️ COOL DOWN ({wins_in_last_10}/10 Wins)"
+    style_10 = "rec-cold"
+
+# Display Indicators
+st.markdown(f"""<div class='rec-box {style_5}'><h3>{msg_5}</h3></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class='rec-box {style_10}'><h3>{msg_10}</h3></div>""", unsafe_allow_html=True)
+
 
 # --- TABS ---
 tab1, tab2 = st.tabs(["📊 Scorecard", "✋ Hand Helper"])
