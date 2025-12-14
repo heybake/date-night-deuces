@@ -11,10 +11,8 @@ class DeucesWildEngine:
     def __init__(self, variant="NSUD", custom_paytable=None):
         self.variant = variant
         
-        # 1. Define Paytable
         if custom_paytable:
             self.paytable = custom_paytable
-            # Royal Guard: Forces Natural Royal to 800
             if self.paytable.get("Natural Royal", 0) < 800:
                 self.paytable["Natural Royal"] = 800
             five_oak_val = self.paytable.get("5 of a Kind", 12)
@@ -42,13 +40,9 @@ class DeucesWildEngine:
         ranks = [c[:-1] for c in hand]
         deuces = ranks.count('2')
         non_deuce_ranks = sorted([self.get_rank_val(c) for c in hand if c[:-1] != '2'])
-        
-        # Fixed: Ignore suits of Deuces
         non_deuce_suits = [c[-1] for c in hand if c[:-1] != '2']
-        if not non_deuce_suits: 
-            is_flush = True 
-        else:
-            is_flush = len(set(non_deuce_suits)) == 1
+        if not non_deuce_suits: is_flush = True 
+        else: is_flush = len(set(non_deuce_suits)) == 1
 
         if is_flush and deuces == 0 and set(ranks) == {'10','J','Q','K','A'}: return "Natural Royal"
         if deuces == 4: return "Four Deuces"
@@ -90,11 +84,9 @@ class DeucesWildEngine:
         current_rank = self.evaluate_hand(hand)
         
         if len(deuces) == 4: return hand, "Victory! Hold All."
-        
         if len(deuces) == 3:
             if current_rank in ["Wild Royal", "5 of a Kind"]: return hand, "Jackpot! Hold All."
             return deuces, "Hold 3 Deuces."
-            
         if len(deuces) == 2:
             if current_rank in ["Wild Royal", "5 of a Kind", "Straight Flush"]: return hand, "Monster! Hold All."
             if current_rank == "4 of a Kind": return hand, "Hold Made Quads."
@@ -106,20 +98,17 @@ class DeucesWildEngine:
                     return deuces + list(combo), "Hunt the Wild Royal."
             if self.strategy_mode == "DEFENSIVE" and current_rank == "Flush": return hand, "Defensive: Hold Flush."
             return deuces, "Hold 2 Deuces."
-            
         if len(deuces) == 1:
             if current_rank in ["Wild Royal", "5 of a Kind", "Straight Flush", "Full House"]: return hand, "Hold Made Hand."
             if current_rank == "4 of a Kind": return hand, "Hold Quads."
             if self.strategy_mode == "DEFENSIVE":
                 if current_rank == "Flush": return hand, "Defensive: Hold Flush."
                 if current_rank == "Straight": return hand, "Defensive: Hold Straight."
-
             royals = {10,11,12,13,14}
             for combo in itertools.combinations(non_deuces, 3):
                 vals = {self.get_rank_val(c) for c in combo}
                 suits = {c[-1] for c in combo}
                 if len(suits) == 1 and vals.issubset(royals): return deuces + list(combo), "Shoot for Wild Royal."
-            
             for combo in itertools.combinations(non_deuces, 3):
                  vals = sorted([self.get_rank_val(c) for c in combo])
                  suits = [c[-1] for c in combo]
@@ -128,28 +117,23 @@ class DeucesWildEngine:
                      if 14 in vals:
                          wheel_v = [x for x in vals if x!=14]
                          if wheel_v and wheel_v[-1] <= 5: return deuces + list(combo), "Straight Flush Draw."
-
             for combo in itertools.combinations(non_deuces, 2):
                 vals = {self.get_rank_val(c) for c in combo}
                 suits = {c[-1] for c in combo}
                 if len(suits) == 1 and vals.issubset(royals): return deuces + list(combo), "3 to Wild Royal."
             return deuces, "Hold Deuce."
-
         if len(deuces) == 0:
             if current_rank in ["Natural Royal", "Straight Flush", "4 of a Kind", "Full House", "Flush", "Straight", "3 of a Kind"]: 
                 return hand, "Made Hand. Hold."
-            
             royals = {10,11,12,13,14}
             for combo in itertools.combinations(non_deuces, 4):
                 vals = {self.get_rank_val(c) for c in combo}
                 suits = {c[-1] for c in combo}
                 if len(suits) == 1 and vals.issubset(royals): return list(combo), "4 to Royal!"
-            
             for combo in itertools.combinations(non_deuces, 3):
                 vals = {self.get_rank_val(c) for c in combo}
                 suits = {c[-1] for c in combo}
                 if len(suits) == 1 and vals.issubset(royals): return list(combo), "3 to Royal."
-            
             pairs = []
             seen = set()
             for c in hand:
@@ -159,7 +143,6 @@ class DeucesWildEngine:
             if pairs:
                 pair_cards = [c for c in hand if c[:-1] in pairs]
                 return pair_cards, "Hold Pair."
-
             return [], "Trash. Redraw 5."
 
     def calculate_outcome_probs(self, held_cards, iterations=2000):
@@ -168,18 +151,15 @@ class DeucesWildEngine:
         full_deck = [f"{r}{s}" for r in ranks for s in suits]
         for c in held_cards:
             if c in full_deck: full_deck.remove(c)
-            
         total_payout = 0
         counts = defaultdict(int)
         draw_count = 5 - len(held_cards)
-        
         for _ in range(iterations):
             drawn = random.sample(full_deck, draw_count)
             final_hand = held_cards + drawn
             rank_name = self.evaluate_hand(final_hand)
             counts[rank_name] += 1
             total_payout += self.paytable.get(rank_name, 0)
-            
         ev = (total_payout / iterations) * 5
         probs = {k: v/iterations for k, v in counts.items()}
         return ev, probs
@@ -190,38 +170,24 @@ class DeucesWildEngine:
 
 st.set_page_config(page_title="Amy Bot", page_icon="🦆")
 
+# Custom CSS for Big Buttons
 st.markdown("""
 <style>
     div.stButton > button { width: 100%; height: 70px; font-size: 24px; border-radius: 12px; }
-    .rec-box { padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 20px;}
-    .rec-hot { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-    .rec-cold { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
 </style>
 """, unsafe_allow_html=True)
 
 # --- SIDEBAR NAVIGATION ---
 with st.sidebar:
     st.title("🦆 Amy Bot")
-    
-    # 🆕 MAIN MENU
-    page_selection = st.radio(
-        "Navigate", 
-        ["📊 Scorecard", "✋ Hand Helper", "📖 Rules"],
-        index=0
-    )
-    
+    page_selection = st.radio("Navigate", ["📊 Scorecard", "✋ Hand Helper", "📖 Rules"], index=0)
     st.divider()
     st.header("⚙️ Config")
-    
-    # REMOVED CUSTOM OPTION
     variant_input = st.selectbox("Variant", ["NSUD (Aggressive)", "AIRPORT (Defensive)"])
     
     selected_variant = "NSUD"
-    if "AIRPORT" in variant_input: 
-        selected_variant = "AIRPORT"
-    else:
-        selected_variant = "NSUD"
-
+    if "AIRPORT" in variant_input: selected_variant = "AIRPORT"
+    
     with st.expander("📊 View Paytable"):
         temp_engine = DeucesWildEngine(selected_variant)
         pt_data = {"Hand": list(temp_engine.paytable.keys()), "1 Coin": list(temp_engine.paytable.values())}
@@ -237,73 +203,90 @@ if 'history' not in st.session_state: st.session_state.history = []
 # 📄 PAGE 1: SCORECARD (TRACKER)
 # ==========================================
 if page_selection == "📊 Scorecard":
-    st.title("🦆 Momentum Tracker")
+    st.title("Momentum Tracker")
 
-    total_hands = len(st.session_state.history)
-    total_wins = sum(st.session_state.history)
+    # --- 🧮 CALCULATE METRICS ---
+    history = st.session_state.history
+    total_hands = len(history)
+    total_wins = sum(history)
+    
+    # Session Metrics
+    session_pct = (total_wins / total_hands * 100) if total_hands > 0 else 0
+    session_delta = "normal" if session_pct >= 45 else "off"
 
-    # --- INDICATOR 1: LAST 5 HANDS ---
-    last_5 = st.session_state.history[-5:] if total_hands >= 5 else st.session_state.history
-    wins_in_last_5 = sum(last_5)
-    count_in_last_5 = len(last_5)
+    # Last 10 Metrics
+    last_10 = history[-10:]
+    l10_wins = sum(last_10)
+    l10_pct = (l10_wins / len(last_10) * 100) if last_10 else 0
+    l10_delta = "normal" if l10_wins >= 6 else "inverse" if l10_wins <= 3 else "off"
 
-    if count_in_last_5 < 5:
-        msg_5 = f"Collecting Data ({count_in_last_5}/5)..."
-        style_5 = "rec-cold" 
-    elif wins_in_last_5 >= 3:
-        msg_5 = f"🔥 HEAT UP! ({wins_in_last_5}/5 Wins)"
-        style_5 = "rec-hot"
-    else:
-        msg_5 = f"❄️ COOL DOWN ({wins_in_last_5}/5 Wins)"
-        style_5 = "rec-cold"
+    # Last 5 Metrics
+    last_5 = history[-5:]
+    l5_wins = sum(last_5)
+    l5_pct = (l5_wins / len(last_5) * 100) if last_5 else 0
+    l5_delta = "normal" if l5_wins >= 3 else "inverse" if l5_wins <= 1 else "off"
 
-    # --- INDICATOR 2: LAST 10 HANDS ---
-    last_10 = st.session_state.history[-10:] if total_hands >= 10 else st.session_state.history
-    wins_in_last_10 = sum(last_10)
-    count_in_last_10 = len(last_10)
+    # --- 📊 THE COMPACT DASHBOARD ---
+    # We use 3 columns to display metrics side-by-side instead of vertically
+    c1, c2, c3 = st.columns(3)
+    
+    c1.metric(
+        label="Session Win %",
+        value=f"{session_pct:.0f}%",
+        delta=f"{total_wins}/{total_hands} Wins" if total_hands > 0 else None,
+        delta_color="off" # Neutral color for session count
+    )
+    
+    c2.metric(
+        label="Last 10",
+        value=f"{l10_pct:.0f}%",
+        delta=f"{l10_wins}/10 Wins" if len(last_10) == 10 else "Building...",
+        delta_color=l10_delta
+    )
+    
+    c3.metric(
+        label="Last 5",
+        value=f"{l5_pct:.0f}%",
+        delta=f"{l5_wins}/5 Wins" if len(last_5) == 5 else "Building...",
+        delta_color=l5_delta
+    )
+    
+    st.divider()
 
-    if count_in_last_10 < 10:
-        msg_10 = f"Collecting Data ({count_in_last_10}/10)..."
-        style_10 = "rec-cold"
-    elif wins_in_last_10 >= 6:
-        msg_10 = f"🔥 HEAT UP! ({wins_in_last_10}/10 Wins)"
-        style_10 = "rec-hot"
-    else:
-        msg_10 = f"❄️ COOL DOWN ({wins_in_last_10}/10 Wins)"
-        style_10 = "rec-cold"
-
-    # --- INDICATOR 3: TOTAL SESSION ---
-    if total_hands == 0:
-        msg_total = "Start Playing..."
-        style_total = "rec-cold"
-    elif (total_wins / total_hands) >= 0.45:
-        msg_total = f"🔥 SESSION HOT! ({total_wins}/{total_hands} Wins)"
-        style_total = "rec-hot"
-    else:
-        msg_total = f"❄️ SESSION COLD ({total_wins}/{total_hands} Wins)"
-        style_total = "rec-cold"
-
-    st.markdown(f"""<div class='rec-box {style_total}'><h3>{msg_total}</h3></div>""", unsafe_allow_html=True)
-    st.markdown(f"""<div class='rec-box {style_10}'><h3>{msg_10}</h3></div>""", unsafe_allow_html=True)
-    st.markdown(f"""<div class='rec-box {style_5}'><h3>{msg_5}</h3></div>""", unsafe_allow_html=True)
-
-    c1, c2 = st.columns(2)
-    with c1:
+    # --- GAME BUTTONS ---
+    b1, b2 = st.columns(2)
+    with b1:
         if st.button("✅ WON"):
             st.session_state.history.append(1)
             st.rerun()
-    with c2:
+    with b2:
         if st.button("❌ LOST"):
             st.session_state.history.append(0)
             st.rerun()
+            
     st.divider()
-    if not st.session_state.history: st.write("No hands played.")
+    
+    # --- HISTORY LOG ---
+    if not history: st.write("No hands played.")
     else:
-        hist = st.session_state.history
-        for i in range(0, len(hist), 5):
-            batch = hist[i:i+5]
-            icons = "".join(["✅ " if x==1 else "❌ " for x in batch])
-            st.write(f"**Hands {i+1}-{i+len(batch)}:** {icons}")
+        # Show newest hands at the TOP for less scrolling
+        # Reverse the list for display logic
+        rev_history = list(reversed(history))
+        
+        # Display in chunks of 5
+        for i in range(0, len(rev_history), 5):
+            batch = rev_history[i:i+5]
+            # Calculate actual hand numbers (e.g. 10-6, 5-1)
+            end_num = total_hands - i
+            start_num = max(1, end_num - 4)
+            
+            # Since batch is reversed (Newest first), we might want to display icons left-to-right as Old->New or New->Old?
+            # Standard log usually reads Left=Oldest in batch. Let's un-reverse the batch for the icon string.
+            batch_icons = list(reversed(batch)) 
+            icons = "".join(["✅ " if x==1 else "❌ " for x in batch_icons])
+            
+            st.write(f"**Hands {start_num}-{end_num}:** {icons}")
+
     if st.button("🗑️ Reset"):
         st.session_state.history = []
         st.rerun()
@@ -312,28 +295,17 @@ if page_selection == "📊 Scorecard":
 # 📄 PAGE 2: HAND HELPER (SOLVER)
 # ==========================================
 elif page_selection == "✋ Hand Helper":
-    st.title("✋ Hand Helper")
-    st.caption("Tap the box below to select your 5 cards.")
+    st.title("Hand Helper")
+    st.caption("Tap to select 5 cards.")
     
-    # 1. GENERATE DECK FOR UI
     suits = ['♠️', '♥️', '♦️', '♣️']
     ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
     deck_display = [f"{r}{s}" for r in ranks for s in suits]
-    
-    # Map back to code: "10♠️" -> "10s"
     suit_map = {'♠️':'s', '♥️':'h', '♦️':'d', '♣️':'c'}
     
-    # 2. MULTISELECT WIDGET (Mobile Friendly)
-    selected_cards = st.multiselect(
-        "Card Selector", 
-        options=deck_display, 
-        max_selections=5,
-        placeholder="Tap to pick 5 cards..."
-    )
+    selected_cards = st.multiselect("Cards", options=deck_display, max_selections=5)
 
-    # 3. CONVERT AND SOLVE
     if len(selected_cards) == 5:
-        # ROBUST PARSING FIX for Emojis
         clean_hand = []
         for c_disp in selected_cards:
             found_suit = False
@@ -347,7 +319,7 @@ elif page_selection == "✋ Hand Helper":
 
         if st.button("🧠 Solve Hand", type="primary"):
             best_hold, reason = engine.get_best_hold(clean_hand)
-            with st.spinner("Simulating..."):
+            with st.spinner("Thinking..."):
                 ev, probs = engine.calculate_outcome_probs(best_hold)
             
             st.success(f"Strategy: {reason}")
@@ -358,23 +330,9 @@ elif page_selection == "✋ Hand Helper":
                     held_display_list.append(selected_cards[i])
             
             st.write(f"**HOLD:** {' '.join(held_display_list)}")
-            
-            st.divider()
-            st.subheader("🔮 Hit Probabilities")
             st.caption(f"Est. EV: {ev:.2f} Credits")
-            
-            display_order = ["Natural Royal", "Four Deuces", "Wild Royal", "5 of a Kind", 
-                            "Straight Flush", "4 of a Kind", "Full House", "Flush", "Straight", "3 of a Kind"]
-            
-            for h in display_order:
-                p = probs.get(h, 0.0)
-                if p > 0.001:
-                    pct = p * 100
-                    ctx = f" (**1 in {int(round(1/p))}**)" if p < 0.50 else ""
-                    st.write(f"**{h}:** {pct:.1f}%{ctx}")
-                    st.progress(min(p, 1.0))
     else:
-        st.info(f"Select {5 - len(selected_cards)} more cards.")
+        st.info("Pick 5 cards.")
 
 # ==========================================
 # 📄 PAGE 3: RULES (STATIC)
