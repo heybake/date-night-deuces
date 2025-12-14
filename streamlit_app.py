@@ -1,159 +1,349 @@
 import streamlit as st
+import itertools
+import random
 import pandas as pd
+from collections import deque, defaultdict
 
-# Set page config for mobile friendliness
-st.set_page_config(page_title="Deuces Tracker", page_icon="🦆", layout="centered")
+# ==========================================
+# 🧬 CORE LOGIC: DEUCES WILD ENGINE
+# ==========================================
+class DeucesWildEngine:
+    def __init__(self, variant="NSUD", custom_paytable=None):
+        self.variant = variant
+        
+        # 1. Define Paytable
+        if custom_paytable:
+            self.paytable = custom_paytable
+            # Royal Guard: Forces Natural Royal to 800
+            if self.paytable.get("Natural Royal", 0) < 800:
+                self.paytable["Natural Royal"] = 800
+            five_oak_val = self.paytable.get("5 of a Kind", 12)
+            self.strategy_mode = "DEFENSIVE" if five_oak_val < 15 else "AGGRESSIVE"
+        else:
+            self.paytable = {
+                "Natural Royal": 800, "Four Deuces": 200, "Wild Royal": 25,
+                "5 of a Kind": 16 if variant == "NSUD" else 12,
+                "Straight Flush": 10 if variant == "NSUD" else 9,
+                "4 of a Kind": 4, "Full House": 4, "Flush": 3, "Straight": 2, "3 of a Kind": 1, "Nothing": 0
+            }
+            if variant == "AIRPORT":
+                self.paytable.update({"Wild Royal": 20, "5 of a Kind": 12, "Straight Flush": 9})
+                self.strategy_mode = "DEFENSIVE"
+            else:
+                self.strategy_mode = "AGGRESSIVE"
 
-# Initialize Session State for History
-if 'history' not in st.session_state:
-    # 1 = Won, 0 = Lost
-    st.session_state.history = []
+    def get_rank_val(self, card):
+        r = card[:-1].upper()
+        if r == 'T': r = '10'
+        mapping = {'2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13, 'A':14}
+        return mapping.get(r, 0)
 
-# ============================================
-# 🎨 CUSTOM CSS FOR BIG BUTTONS
-# ============================================
-# This CSS targets the buttons inside the specific columns we create later.
-# It makes them tall, bold, and gives them distinct winning/losing colors.
+    def evaluate_hand(self, hand):
+        ranks = [c[:-1] for c in hand]
+        deuces = ranks.count('2')
+        non_deuce_ranks = sorted([self.get_rank_val(c) for c in hand if c[:-1] != '2'])
+        
+        # Fixed: Ignore suits of Deuces
+        non_deuce_suits = [c[-1] for c in hand if c[:-1] != '2']
+        if not non_deuce_suits: 
+            is_flush = True 
+        else:
+            is_flush = len(set(non_deuce_suits)) == 1
+
+        if is_flush and deuces == 0 and set(ranks) == {'10','J','Q','K','A'}: return "Natural Royal"
+        if deuces == 4: return "Four Deuces"
+        if is_flush and deuces > 0 and set(non_deuce_ranks).issubset({10,11,12,13,14}): return "Wild Royal"
+        
+        counts = {x:non_deuce_ranks.count(x) for x in set(non_deuce_ranks)}
+        max_k = max(counts.values()) if counts else 0
+        if deuces + max_k >= 5: return "5 of a Kind"
+        
+        if is_flush:
+            if deuces > 0:
+                if not non_deuce_ranks: return "Straight Flush"
+                span = non_deuce_ranks[-1] - non_deuce_ranks[0]
+                if span <= 4: return "Straight Flush"
+                if 14 in non_deuce_ranks:
+                    wheel_ranks = [x for x in non_deuce_ranks if x != 14]
+                    if not wheel_ranks or (wheel_ranks[-1] <= 5): return "Straight Flush"
+            else:
+                if (non_deuce_ranks[-1] - non_deuce_ranks[0] == 4): return "Straight Flush"
+                if set(non_deuce_ranks) == {14,2,3,4,5}: return "Straight Flush"
+
+        if deuces + max_k >= 4: return "4 of a Kind"
+        if deuces == 0 and 3 in counts.values() and 2 in counts.values(): return "Full House"
+        if is_flush: return "Flush"
+        
+        unique_vals = sorted(list(set(non_deuce_ranks)))
+        if len(unique_vals) + deuces >= 5:
+            if unique_vals[-1] - unique_vals[0] <= 4: return "Straight"
+            if 14 in unique_vals:
+                wheel_vals = [x for x in unique_vals if x != 14]
+                if not wheel_vals or (wheel_vals[-1] <= 5): return "Straight"
+            
+        if deuces + max_k >= 3: return "3 of a Kind"
+        return "Nothing"
+
+    def get_best_hold(self, hand):
+        deuces = [c for c in hand if c.startswith('2')]
+        non_deuces = [c for c in hand if not c.startswith('2')]
+        current_rank = self.evaluate_hand(hand)
+        
+        if len(deuces) == 4: return hand, "Victory! Hold All."
+        
+        if len(deuces) == 3:
+            if current_rank in ["Wild Royal", "5 of a Kind"]: return hand, "Jackpot! Hold All."
+            return deuces, "Hold 3 Deuces."
+            
+        if len(deuces) == 2:
+            if current_rank in ["Wild Royal", "5 of a Kind", "Straight Flush"]: return hand, "Monster! Hold All."
+            if current_rank == "4 of a Kind": return hand, "Hold Made Quads."
+            royals = {10,11,12,13,14}
+            for combo in itertools.combinations(non_deuces, 2):
+                vals = {self.get_rank_val(c) for c in combo}
+                suits = {c[-1] for c in combo}
+                if len(suits) == 1 and vals.issubset(royals):
+                    return deuces + list(combo), "Hunt the Wild Royal."
+            if self.strategy_mode == "DEFENSIVE" and current_rank == "Flush": return hand, "Defensive: Hold Flush."
+            return deuces, "Hold 2 Deuces."
+            
+        if len(deuces) == 1:
+            if current_rank in ["Wild Royal", "5 of a Kind", "Straight Flush", "Full House"]: return hand, "Hold Made Hand."
+            if current_rank == "4 of a Kind": return hand, "Hold Quads."
+            if self.strategy_mode == "DEFENSIVE":
+                if current_rank == "Flush": return hand, "Defensive: Hold Flush."
+                if current_rank == "Straight": return hand, "Defensive: Hold Straight."
+
+            royals = {10,11,12,13,14}
+            for combo in itertools.combinations(non_deuces, 3):
+                vals = {self.get_rank_val(c) for c in combo}
+                suits = {c[-1] for c in combo}
+                if len(suits) == 1 and vals.issubset(royals): return deuces + list(combo), "Shoot for Wild Royal."
+            
+            for combo in itertools.combinations(non_deuces, 3):
+                 vals = sorted([self.get_rank_val(c) for c in combo])
+                 suits = [c[-1] for c in combo]
+                 if len(set(suits)) == 1:
+                     if (vals[-1] - vals[0] <= 4): return deuces + list(combo), "Straight Flush Draw."
+                     if 14 in vals:
+                         wheel_v = [x for x in vals if x!=14]
+                         if wheel_v and wheel_v[-1] <= 5: return deuces + list(combo), "Straight Flush Draw."
+
+            for combo in itertools.combinations(non_deuces, 2):
+                vals = {self.get_rank_val(c) for c in combo}
+                suits = {c[-1] for c in combo}
+                if len(suits) == 1 and vals.issubset(royals): return deuces + list(combo), "3 to Wild Royal."
+            return deuces, "Hold Deuce."
+
+        if len(deuces) == 0:
+            if current_rank in ["Natural Royal", "Straight Flush", "4 of a Kind", "Full House", "Flush", "Straight", "3 of a Kind"]: 
+                return hand, "Made Hand. Hold."
+            
+            royals = {10,11,12,13,14}
+            for combo in itertools.combinations(non_deuces, 4):
+                vals = {self.get_rank_val(c) for c in combo}
+                suits = {c[-1] for c in combo}
+                if len(suits) == 1 and vals.issubset(royals): return list(combo), "4 to Royal!"
+            
+            for combo in itertools.combinations(non_deuces, 3):
+                vals = {self.get_rank_val(c) for c in combo}
+                suits = {c[-1] for c in combo}
+                if len(suits) == 1 and vals.issubset(royals): return list(combo), "3 to Royal."
+            
+            pairs = []
+            seen = set()
+            for c in hand:
+                r = c[:-1]
+                if r in seen: pairs.append(r)
+                seen.add(r)
+            if pairs:
+                pair_cards = [c for c in hand if c[:-1] in pairs]
+                return pair_cards, "Hold Pair."
+
+            return [], "Trash. Redraw 5."
+
+    def calculate_outcome_probs(self, held_cards, iterations=2000):
+        suits = ['s', 'h', 'd', 'c']
+        ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+        full_deck = [f"{r}{s}" for r in ranks for s in suits]
+        for c in held_cards:
+            if c in full_deck: full_deck.remove(c)
+            
+        total_payout = 0
+        counts = defaultdict(int)
+        draw_count = 5 - len(held_cards)
+        
+        for _ in range(iterations):
+            drawn = random.sample(full_deck, draw_count)
+            final_hand = held_cards + drawn
+            rank_name = self.evaluate_hand(final_hand)
+            counts[rank_name] += 1
+            total_payout += self.paytable.get(rank_name, 0)
+            
+        ev = (total_payout / iterations) * 5
+        probs = {k: v/iterations for k, v in counts.items()}
+        return ev, probs
+
+# ==========================================
+# 🎨 STREAMLIT UI
+# ==========================================
+
+st.set_page_config(page_title="Amy Bot Lite", page_icon="🦆")
+
 st.markdown("""
 <style>
-    /* General styling for the big buttons */
-    .big-button {
-        width: 100%;
-        height: 100px !important; /* Force height */
-        font-size: 32px !important; /* Force big text */
-        font-weight: 800 !important;
-        border-radius: 12px !important;
-        border: none !important;
-        transition: all 0.2s ease-in-out;
-    }
-
-    /* Specific styling for the WON button column */
-    div[data-testid="column"]:nth-of-type(1) .stButton button {
-        background-color: #28a745 !important; /* Green */
-        color: white !important;
-    }
-    div[data-testid="column"]:nth-of-type(1) .stButton button:hover {
-         background-color: #1e7e34 !important; /* Darker Green hover */
-         transform: scale(1.02);
-    }
-
-    /* Specific styling for the LOST button column */
-    div[data-testid="column"]:nth-of-type(2) .stButton button {
-         background-color: #dc3545 !important; /* Red */
-         color: white !important;
-    }
-    div[data-testid="column"]:nth-of-type(2) .stButton button:hover {
-         background-color: #bd2130 !important; /* Darker Red hover */
-         transform: scale(1.02);
-    }
-    
-    /* Styling for metrics to make them pop */
-    [data-testid="stMetricValue"] {
-        font-size: 24px;
-    }
+    div.stButton > button { width: 100%; height: 70px; font-size: 24px; border-radius: 12px; }
+    .rec-box { padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 20px;}
+    .rec-hot { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .rec-cold { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
 </style>
 """, unsafe_allow_html=True)
 
+# --- SIDEBAR ---
+with st.sidebar:
+    st.header("⚙️ Config")
+    variant_input = st.selectbox("Variant", ["NSUD (Aggressive)", "AIRPORT (Defensive)", "Custom (Edit)"])
+    
+    custom_pt = None
+    selected_variant = "NSUD"
+    if "NSUD" in variant_input: selected_variant = "NSUD"
+    elif "AIRPORT" in variant_input: selected_variant = "AIRPORT"
+    else: selected_variant = "Custom"
+    
+    if selected_variant == "Custom":
+        st.warning("⚠️ Editing Paytable (1 Coin)")
+        if 'custom_pt_df' not in st.session_state:
+            default_data = {
+                "Natural Royal": 800, "Four Deuces": 200, "Wild Royal": 20, 
+                "5 of a Kind": 12, "Straight Flush": 9, "4 of a Kind": 4, 
+                "Full House": 4, "Flush": 3, "Straight": 2, "3 of a Kind": 1
+            }
+            st.session_state.custom_pt_df = pd.DataFrame(list(default_data.items()), columns=["Hand", "Payout"])
+        edited_df = st.data_editor(st.session_state.custom_pt_df, hide_index=True, key="pt_editor")
+        custom_pt = dict(zip(edited_df["Hand"], edited_df["Payout"]))
+    else:
+        with st.expander("📊 View Paytable"):
+            temp_engine = DeucesWildEngine(selected_variant)
+            pt_data = {"Hand": list(temp_engine.paytable.keys()), "1 Coin": list(temp_engine.paytable.values())}
+            st.dataframe(pd.DataFrame(pt_data), hide_index=True)
+            
+    st.info(f"Mode: {selected_variant}")
 
-# ============================================
-# 🧮 CALCULATE MOMENTUM METRICS
-# ============================================
-history = st.session_state.history
-total_hands = len(history)
-total_wins = sum(history)
+engine = DeucesWildEngine(variant=selected_variant, custom_paytable=custom_pt)
 
-# Helper function to calculate percentage safely
-def calculate_pct(wins, total):
-    return (wins / total * 100) if total > 0 else 0.0
+if 'history' not in st.session_state: st.session_state.history = []
 
-# 1. Overall Game
-overall_pct = calculate_pct(total_wins, total_hands)
-
-# 2. Last 10 Hands
-last_10 = history[-10:]
-hands_in_last_10 = len(last_10)
-wins_in_last_10 = sum(last_10)
-last_10_pct = calculate_pct(wins_in_last_10, hands_in_last_10)
-
-# 3. Last 5 Hands
-last_5 = history[-5:]
-hands_in_last_5 = len(last_5)
+# --- HEADER ---
+st.title("🦆 Amy Bot: Momentum")
+total_hands = len(st.session_state.history)
+last_5 = st.session_state.history[-5:] if total_hands >= 5 else st.session_state.history
 wins_in_last_5 = sum(last_5)
-last_5_pct = calculate_pct(wins_in_last_5, hands_in_last_5)
+count_in_last_5 = len(last_5)
 
-
-# ============================================
-# 📊 THE NEW DASHBOARD UI
-# ============================================
-st.title("🦆 Deuces Momentum")
-
-# Display Metrics in a row
-m1, m2, m3, m4 = st.columns(4)
-
-# Metric 1: Clear Total Hand Count
-m1.metric("Total Hands", total_hands)
-
-# Metric 2: Entire Game Win %
-m2.metric("Overall Win %", f"{overall_pct:.1f}%")
-
-# Metric 3: Last 10 Win %
-# We add a help tooltip to show the exact fraction (e.g., 6/10)
-m3.metric("Last 10", f"{last_10_pct:.1f}%", help=f"{wins_in_last_10} wins out of {hands_in_last_10} hands")
-
-# Metric 4: Last 5 Win %
-# Visual trick: color the metric based on heat
-delta_color = "off"
-if hands_in_last_5 >= 5:
-    if wins_in_last_5 >= 4: delta_color = "normal" # Green/Hot for 4+ wins
-    elif wins_in_last_5 <= 1: delta_color = "inverse" # Red/Cold for 1 or less wins
-
-m4.metric("Last 5 (Heat)", f"{last_5_pct:.0f}%", delta=None, delta_color=delta_color, help=f"{wins_in_last_5} wins out of {hands_in_last_5} hands")
-
-st.divider()
-
-# ============================================
-# 🔴🟢 THE NEW BIG BUTTONS
-# ============================================
-# We use two columns. The CSS defined at the top targets these specific columns
-# to apply the big green/red styling.
-
-col_won, col_lost = st.columns(2)
-
-with col_won:
-    # We add a class name to help the CSS target it, though the column targeting does most work
-    if st.button("✅ WON HAND", key="big_won", use_container_width=True):
-        st.session_state.history.append(1)
-        st.rerun()
-
-with col_lost:
-    if st.button("❌ LOST HAND", key="big_lost", use_container_width=True):
-        st.session_state.history.append(0)
-        st.rerun()
-
-
-# ============================================
-# 📜 HISTORY LOG (Existing functionality)
-# ============================================
-st.divider()
-st.subheader("Session Log")
-
-if total_hands == 0:
-    st.caption("Tap the big buttons above to start tracking.")
+if count_in_last_5 < 5:
+    msg = f"Collecting Data ({count_in_last_5}/5)..."
+    style = "rec-cold" 
+elif wins_in_last_5 >= 3:
+    msg = f"🔥 HEAT UP! ({wins_in_last_5}/5 Wins)"
+    style = "rec-hot"
 else:
-    # Display history in groups of 5, reversed so newest is top
-    for i in range(total_hands, 0, -5):
-        start_index = max(0, i-5)
-        end_index = i
-        batch = history[start_index:end_index]
-        
-        # Create the check/x string
-        icons = "".join(["✅ " if x == 1 else "❌ " for x in batch])
-        
-        st.write(f"**Hands {start_index + 1}-{end_index}:** {icons}")
+    msg = f"❄️ COOL DOWN ({wins_in_last_5}/5 Wins)"
+    style = "rec-cold"
+st.markdown(f"""<div class='rec-box {style}'><h3>{msg}</h3></div>""", unsafe_allow_html=True)
 
-st.divider()
+# --- TABS ---
+tab1, tab2 = st.tabs(["📊 Scorecard", "✋ Hand Helper"])
 
-# Reset button at the bottom, styled normally so it doesn't conflict with the big buttons
-if st.button("🗑️ Reset Session History"):
-    st.session_state.history = []
-    st.rerun()
+with tab1:
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("✅ WON"):
+            st.session_state.history.append(1)
+            st.rerun()
+    with c2:
+        if st.button("❌ LOST"):
+            st.session_state.history.append(0)
+            st.rerun()
+    st.divider()
+    if not st.session_state.history: st.write("No hands played.")
+    else:
+        hist = st.session_state.history
+        for i in range(0, len(hist), 5):
+            batch = hist[i:i+5]
+            icons = "".join(["✅ " if x==1 else "❌ " for x in batch])
+            st.write(f"**Hands {i+1}-{i+len(batch)}:** {icons}")
+    if st.button("🗑️ Reset"):
+        st.session_state.history = []
+        st.rerun()
+
+with tab2:
+    st.caption("Tap the box below to select your 5 cards.")
+    
+    # 1. GENERATE DECK FOR UI
+    suits = ['♠️', '♥️', '♦️', '♣️']
+    ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+    deck_display = [f"{r}{s}" for r in ranks for s in suits]
+    
+    # Map back to code: "10♠️" -> "10s"
+    suit_map = {'♠️':'s', '♥️':'h', '♦️':'d', '♣️':'c'}
+    
+    # 2. MULTISELECT WIDGET (Mobile Friendly)
+    selected_cards = st.multiselect(
+        "Card Selector", 
+        options=deck_display, 
+        max_selections=5,
+        placeholder="Tap to pick 5 cards..."
+    )
+
+    # 3. CONVERT AND SOLVE
+    if len(selected_cards) == 5:
+        # ROBUST PARSING FIX for Emojis
+        clean_hand = []
+        for c_disp in selected_cards:
+            # We iterate through keys to see which suit suffix matches
+            found_suit = False
+            for s_emoji, s_code in suit_map.items():
+                if c_disp.endswith(s_emoji):
+                    # Remove the emoji to get the rank
+                    r = c_disp.replace(s_emoji, "")
+                    clean_hand.append(f"{r}{s_code}")
+                    found_suit = True
+                    break
+            
+            # Fallback (Should never happen if list is constant)
+            if not found_suit:
+                clean_hand.append("2s") 
+
+        if st.button("🧠 Solve Hand", type="primary"):
+            best_hold, reason = engine.get_best_hold(clean_hand)
+            with st.spinner("Simulating..."):
+                ev, probs = engine.calculate_outcome_probs(best_hold)
+            
+            st.success(f"Strategy: {reason}")
+            if selected_variant == "Custom": st.caption(f"(Auto-Strategy: {engine.strategy_mode})")
+            
+            # Visualize Hold
+            # Find the display version of the held cards
+            held_display_list = []
+            for i, c_code in enumerate(clean_hand):
+                if c_code in best_hold:
+                    held_display_list.append(selected_cards[i])
+            
+            st.write(f"**HOLD:** {' '.join(held_display_list)}")
+            
+            st.divider()
+            st.subheader("🔮 Hit Probabilities")
+            st.caption(f"Est. EV: {ev:.2f} Credits")
+            
+            display_order = ["Natural Royal", "Four Deuces", "Wild Royal", "5 of a Kind", 
+                            "Straight Flush", "4 of a Kind", "Full House", "Flush", "Straight", "3 of a Kind"]
+            
+            for h in display_order:
+                p = probs.get(h, 0.0)
+                if p > 0.001:
+                    pct = p * 100
+                    ctx = f" (**1 in {int(round(1/p))}**)" if p < 0.50 else ""
+                    st.write(f"**{h}:** {pct:.1f}%{ctx}")
+                    st.progress(min(p, 1.0))
+    else:
+        st.info(f"Select {5 - len(selected_cards)} more cards.")
