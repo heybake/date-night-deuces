@@ -234,32 +234,27 @@ if page_selection == "📊 Scorecard":
     
     st.divider()
 
-    # --- 📜 HISTORY WINDOW (Scrollable) ---
-    # This box keeps the history constrained so it doesn't push the buttons off screen.
-    # We display Newest Hands First so the latest result is always at the top of the window.
+    # --- 📜 HISTORY WINDOW (Standard Chronological) ---
+    # We display hands 1-5, then 6-10, just like a list that grows downwards.
+    # The container lets you scroll if it gets too long.
     with st.container(height=300, border=True):
         if not history: 
             st.write("No hands played.")
             st.caption("Results will appear here.")
         else:
-            # REVERSE HISTORY: Newest First
-            rev_history = list(reversed(history))
-            
-            for i in range(0, len(rev_history), 5):
-                batch = rev_history[i:i+5]
-                end_num = total_hands - i
-                start_num = max(1, end_num - 4)
+            # Iterate normally from start of list to end
+            for i in range(0, total_hands, 5):
+                batch = history[i:i+5]
+                start_num = i + 1
+                end_num = i + len(batch)
                 
-                # Batch logic: if we have [1, 0], we want to show ✅ ❌
-                # Since batch is reversed (Newest...Oldest in that chunk), 
-                # we display it directly to read Left-to-Right as Newest-to-Oldest? 
-                # Or re-reverse to read Oldest-to-Newest within the chunk?
-                # Let's keep it simple: Show the icons.
+                # Standard Left-to-Right icons (First hand in batch -> Last hand in batch)
                 icons = "".join(["✅ " if x==1 else "❌ " for x in batch])
-                st.write(f"**Hands {end_num}-{start_num}:** {icons}")
+                
+                # Display format: Hands 1-5: ✅ ❌ ❌ ✅ ✅
+                st.write(f"**Hands {start_num}-{end_num}:** {icons}")
 
     # --- 🕹️ FLOATING BUTTONS (Fixed Position) ---
-    # These sit below the scrollable container, meaning they never move.
     b1, b2 = st.columns(2)
     with b1:
         if st.button("✅ WON"):
