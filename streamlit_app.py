@@ -166,7 +166,66 @@ class DeucesWildEngine:
         return ev, probs
 
 # ==========================================
-# 📄 HELPER: SHOW RULES (Merged from rules.py)
+# 📄 HELPER: RENDER CHART (UPGRADED)
+# ==========================================
+def render_bankroll_chart(hands, archetype="Generic"):
+    chart_data = pd.DataFrame({'Hand': range(len(hands)), 'Bankroll': hands})
+    
+    # 1. The Main Line
+    line = alt.Chart(chart_data).mark_line(
+        point=True, 
+        strokeWidth=3
+    ).encode(
+        x=alt.X('Hand', axis=alt.Axis(title='Hands Played')),
+        y=alt.Y('Bankroll', scale=alt.Scale(domain=[min(hands)-5, max(hands)+5]), axis=alt.Axis(title='Bankroll ($)')),
+        color=alt.condition(
+            alt.datum.Bankroll > 40,
+            alt.value("#4cea72"),  # Green if profit
+            alt.value("#ff6c6c")   # Red if loss
+        )
+    )
+    
+    # 2. The "Waterline" (Start Balance)
+    waterline = alt.Chart(pd.DataFrame({'y': [40]})).mark_rule(
+        color='white', 
+        strokeDash=[5,5], 
+        size=2
+    ).encode(y='y')
+    
+    # 3. Stop Loss Line ($30)
+    stop_loss = alt.Chart(pd.DataFrame({'y': [30]})).mark_rule(
+        color='#ff4b4b', 
+        size=1
+    ).encode(y='y')
+
+    # 4. Profit Target ($48)
+    profit_target = alt.Chart(pd.DataFrame({'y': [48]})).mark_rule(
+        color='#4cea72', 
+        size=1
+    ).encode(y='y')
+    
+    # 5. Area Shading (Underwater vs Profit)
+    area = alt.Chart(chart_data).mark_area(opacity=0.3).encode(
+        x='Hand',
+        y='Bankroll',
+        y2=alt.value(40), # Shade relative to start ($40) via calculation or baseline
+        color=alt.condition(
+            alt.datum.Bankroll >= 40,
+            alt.value("green"),
+            alt.value("red")
+        )
+    )
+
+    # Combine
+    chart = (area + waterline + stop_loss + profit_target + line).properties(
+        height=250,
+        title=f"{archetype} Session Arc"
+    )
+    
+    st.altair_chart(chart, use_container_width=True)
+
+# ==========================================
+# 📄 HELPER: SHOW RULES (Merged)
 # ==========================================
 def show_rules_page():
     st.title("📖 Airport Protocol")
@@ -331,19 +390,6 @@ engine = DeucesWildEngine(variant=selected_variant)
 
 if 'history' not in st.session_state: st.session_state.history = []
 if 'current_view' not in st.session_state: st.session_state.current_view = "main"
-
-# ==========================================
-# 📄 HELPER: RENDER CHART
-# ==========================================
-def render_bankroll_chart(hands, height=200):
-    chart_data = pd.DataFrame({'Hand': range(len(hands)), 'Bankroll': hands})
-    base = alt.Chart(chart_data).encode(x=alt.X('Hand', axis=alt.Axis(title='Hands Played')))
-    line = base.mark_line(point=True).encode(
-        y=alt.Y('Bankroll', scale=alt.Scale(domain=[min(hands)-5, max(hands)+5]), axis=alt.Axis(title='Bankroll ($)')),
-        color=alt.value("#8ab4f8")
-    )
-    rule = base.mark_rule(color='red', strokeDash=[5,5]).encode(y=alt.datum(40)) # Start line
-    st.altair_chart((line + rule), use_container_width=True)
 
 # ==========================================
 # 📄 PAGE 1: SCORECARD (TRACKER)
@@ -527,14 +573,8 @@ elif page_selection == "🧬 Case Studies":
             </div>
             """, unsafe_allow_html=True)
             
-            # Simple Sparkline
-            chart_data = pd.DataFrame({'Hand': range(len(case['hands'])), 'Bankroll': case['hands']})
-            c = alt.Chart(chart_data).mark_line(point=True).encode(
-                x=alt.X('Hand', axis=None),
-                y=alt.Y('Bankroll', scale=alt.Scale(domain=[15, 50])),
-                color=alt.value("#8ab4f8")
-            ).properties(height=60)
-            st.altair_chart(c, use_container_width=True)
+            # Use upgraded chart
+            render_bankroll_chart(case['hands'], archetype=case['name'])
 
 # ==========================================
 # 📄 PAGE 4: RULES & DETAILS
@@ -556,7 +596,7 @@ elif page_selection == "📖 Rules":
         st.write("3. **Hand 15 Check:** If you are at $30 or less, you are in a Vacuum.")
         st.write("### Real Data (Session S44):")
         hands = [38.75, 37.5, 36.25, 35.0, 35.0, 33.75, 32.5, 31.25, 30.0, 28.75, 27.5, 26.25, 25.0, 23.75, 22.5, 21.25, 20.0, 18.75]
-        render_bankroll_chart(hands)
+        render_bankroll_chart(hands, "Vacuum")
         st.info("Study Frequency: ~19% of sessions.")
 
     elif st.session_state.current_view == "detail_tease":
@@ -570,7 +610,7 @@ elif page_selection == "📖 Rules":
         st.write("3. **Action:** If you are 'Sub-Surface' for 20 hands, leave.")
         st.write("### Real Data (Session S36):")
         hands = [38.75, 37.5, 36.25, 35.0, 35.0, 35.0, 33.75, 37.5, 36.25, 35.0, 38.75, 37.5, 36.25, 35.0, 33.75, 32.5, 31.25, 30.0]
-        render_bankroll_chart(hands)
+        render_bankroll_chart(hands, "Tease")
         st.info("Study Frequency: ~15% of sessions.")
 
     elif st.session_state.current_view == "detail_zombie":
@@ -584,7 +624,7 @@ elif page_selection == "📖 Rules":
         st.write("3. **Logic:** The payout for 5-of-a-Kind (12) is too low to sustain a long game.")
         st.write("### Real Data (Session S25):")
         hands = [38.75, 37.5, 36.25, 36.25, 37.5, 41.25, 40.0, 38.75, 37.5, 38.75, 37.5, 36.25, 35.0, 38.75, 37.5, 36.25, 35.0, 33.75, 32.5, 31.25]
-        render_bankroll_chart(hands)
+        render_bankroll_chart(hands, "Zombie")
         st.info("Study Frequency: ~38% of sessions.")
 
     elif st.session_state.current_view == "detail_sniper":
@@ -598,5 +638,5 @@ elif page_selection == "📖 Rules":
         st.write("3. **The Trap:** Thinking it will last forever. It won't. Cash out.")
         st.write("### Real Data (Session S30):")
         hands = [40, 43.75, 47.5]
-        render_bankroll_chart(hands)
+        render_bankroll_chart(hands, "Sniper")
         st.info("Study Frequency: ~27% of sessions.")
