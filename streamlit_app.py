@@ -166,7 +166,7 @@ class DeucesWildEngine:
         return ev, probs
 
 # ==========================================
-# 📄 HELPER: RENDER CHART (UPGRADED)
+# 📄 HELPER: RENDER CHART
 # ==========================================
 def render_bankroll_chart(hands, archetype="Generic"):
     chart_data = pd.DataFrame({'Hand': range(len(hands)), 'Bankroll': hands})
@@ -208,7 +208,7 @@ def render_bankroll_chart(hands, archetype="Generic"):
     area = alt.Chart(chart_data).mark_area(opacity=0.3).encode(
         x='Hand',
         y='Bankroll',
-        y2=alt.value(40), # Shade relative to start ($40) via calculation or baseline
+        y2=alt.value(40),
         color=alt.condition(
             alt.datum.Bankroll >= 40,
             alt.value("green"),
@@ -512,6 +512,21 @@ elif page_selection == "✋ Hand Helper":
             
             st.write(f"**HOLD:** {' '.join(held_display_list)}")
             st.caption(f"Est. EV: {ev:.2f} Credits")
+            
+            # --- RESTORED: Hit Frequency Table ---
+            st.divider()
+            st.write("#### 📊 Outcome Probabilities")
+            hit_data = []
+            # Sort outcomes by probability desc
+            for hand_type, prob in sorted(probs.items(), key=lambda x: x[1], reverse=True):
+                if prob > 0:
+                    hit_data.append({"Result": hand_type, "Chance": f"{prob*100:.1f}%"})
+            
+            if hit_data:
+                st.dataframe(pd.DataFrame(hit_data), hide_index=True, use_container_width=True)
+            else:
+                st.write("No winning outcomes probable.")
+
     else:
         st.info("Pick 5 cards.")
 
