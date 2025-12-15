@@ -2,7 +2,9 @@ import streamlit as st
 import itertools
 import random
 import pandas as pd
-from collections import deque, defaultdict
+from collections import defaultdict
+import altair as alt
+import rules  # Import the rules module
 
 # ==========================================
 # 🧬 CORE LOGIC: DEUCES WILD ENGINE
@@ -207,13 +209,45 @@ st.markdown("""
     .hot { color: #4cea72 !important; border-color: #1e5e2e !important; background-color: #0e2b14 !important; }
     .cold { color: #ff6c6c !important; border-color: #661a1a !important; background-color: #2d0b0b !important; }
     .neutral { color: #ffffff; }
+    
+    /* Case Study Cards */
+    .case-card {
+        border: 1px solid #41424b;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+        background-color: #1e1e24;
+    }
+    .tag {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+    .tag-vacuum { background-color: #4a1515; color: #ff6c6c; border: 1px solid #ff6c6c; }
+    .tag-zombie { background-color: #3b3005; color: #ffd700; border: 1px solid #ffd700; }
+    .tag-sniper { background-color: #0e2b14; color: #4cea72; border: 1px solid #4cea72; }
+    .tag-tease { background-color: #1a253a; color: #8ab4f8; border: 1px solid #8ab4f8; }
+
 </style>
 """, unsafe_allow_html=True)
 
 # --- SIDEBAR NAVIGATION ---
 with st.sidebar:
     st.title("🦆 Amy Bot")
-    page_selection = st.radio("Navigate", ["📊 Scorecard", "✋ Hand Helper", "📖 Rules"], index=0)
+    # Store previous selection to detect changes
+    if "last_page_selection" not in st.session_state:
+        st.session_state.last_page_selection = "📊 Scorecard"
+        
+    page_selection = st.radio("Navigate", ["📊 Scorecard", "✋ Hand Helper", "🧬 Case Studies", "📖 Rules"], index=0)
+    
+    # If user clicks navbar, reset any detailed view
+    if page_selection != st.session_state.last_page_selection:
+        st.session_state.current_view = "main"
+        st.session_state.last_page_selection = page_selection
+
     st.divider()
     st.header("⚙️ Config")
     variant_input = st.selectbox("Variant", ["NSUD (Aggressive)", "AIRPORT (Defensive)"])
@@ -231,6 +265,20 @@ with st.sidebar:
 engine = DeucesWildEngine(variant=selected_variant)
 
 if 'history' not in st.session_state: st.session_state.history = []
+if 'current_view' not in st.session_state: st.session_state.current_view = "main"
+
+# ==========================================
+# 📄 HELPER: RENDER CHART
+# ==========================================
+def render_bankroll_chart(hands, height=200):
+    chart_data = pd.DataFrame({'Hand': range(len(hands)), 'Bankroll': hands})
+    base = alt.Chart(chart_data).encode(x=alt.X('Hand', axis=alt.Axis(title='Hands Played')))
+    line = base.mark_line(point=True).encode(
+        y=alt.Y('Bankroll', scale=alt.Scale(domain=[min(hands)-5, max(hands)+5]), axis=alt.Axis(title='Bankroll ($)')),
+        color=alt.value("#8ab4f8")
+    )
+    rule = base.mark_rule(color='red', strokeDash=[5,5]).encode(y=alt.datum(40)) # Start line
+    st.altair_chart((line + rule), use_container_width=True)
 
 # ==========================================
 # 📄 PAGE 1: SCORECARD (TRACKER)
@@ -287,24 +335,15 @@ if page_selection == "📊 Scorecard":
             st.write("No hands played.")
             st.caption("Results will appear here.")
         else:
-            # CALCULATE BATCHES: Total Hands -> 1 (Newest at Top)
             import math
             num_rows = math.ceil(total_hands / 5)
-            
-            # Iterate backwards from the last row index down to 0
             for row_idx in range(num_rows - 1, -1, -1):
                 start_index = row_idx * 5
                 end_index = start_index + 5
-                
-                # Get the slice (Standard chronological order within the slice)
                 batch = history[start_index : end_index]
-                
-                # Display Numbers
                 start_hand_num = start_index + 1
                 end_hand_num = start_index + len(batch)
-                
                 icons = "".join(["✅ " if x==1 else "❌ " for x in batch])
-                
                 st.write(f"**Hands {start_hand_num}-{end_hand_num}:** {icons}")
 
     # --- 🕹️ FLOATING BUTTONS (Fixed Position) ---
@@ -362,56 +401,137 @@ elif page_selection == "✋ Hand Helper":
             
             st.write(f"**HOLD:** {' '.join(held_display_list)}")
             st.caption(f"Est. EV: {ev:.2f} Credits")
-            
-            # --- 🔮 RESTORED HIT PROBABILITIES ---
-            st.divider()
-            st.subheader("🔮 Hit Probabilities")
-            
-            display_order = ["Natural Royal", "Four Deuces", "Wild Royal", "5 of a Kind", 
-                            "Straight Flush", "4 of a Kind", "Full House", "Flush", "Straight", "3 of a Kind"]
-            
-            for h in display_order:
-                p = probs.get(h, 0.0)
-                if p > 0.001:
-                    pct = p * 100
-                    ctx = f" (**1 in {int(round(1/p))}**)" if p < 0.50 else ""
-                    st.write(f"**{h}:** {pct:.1f}%{ctx}")
-                    st.progress(min(p, 1.0))
-
     else:
         st.info("Pick 5 cards.")
 
 # ==========================================
-# 📄 PAGE 3: RULES (STATIC)
+# 📄 PAGE 3: CASE STUDIES (DATA)
+# ==========================================
+elif page_selection == "🧬 Case Studies":
+    st.title("The Variance Archives")
+    st.caption("Real examples from the Research Project.")
+
+    # --- ARCHETYPE DATA (Actual Logs) ---
+    archetypes = [
+        {
+            "id": "S44",
+            "name": "The Vacuum",
+            "tag_class": "tag-vacuum",
+            "desc": "The deck refused to yield Wilds. The player lost 25% of their bankroll in Hand 9.",
+            "stat": "Bankroll: $40 → $30 (Stop Loss)",
+            "hands": [38.75, 37.5, 36.25, 35.0, 35.0, 33.75, 32.5, 31.25, 30.0, 28.75, 27.5, 26.25, 25.0, 23.75, 22.5, 21.25, 20.0, 18.75],
+            "lesson": "🛑 Rule #1: If you drop 25% early, STOP."
+        },
+        {
+            "id": "S36",
+            "name": "The Tease",
+            "tag_class": "tag-tease",
+            "desc": "Classic 'Sub-Surface.' 70 hands played, max bankroll was $38.75. Never profitable.",
+            "stat": "Peak Bankroll: $38.75 (Start $40)",
+            "hands": [38.75, 37.5, 36.25, 35.0, 35.0, 35.0, 33.75, 37.5, 36.25, 35.0, 38.75, 37.5, 36.25, 35.0, 33.75, 32.5, 31.25, 30.0],
+            "lesson": "🛑 Rule #2: If you fight to get back to zero, EXIT."
+        },
+        {
+            "id": "S25",
+            "name": "The Zombie",
+            "tag_class": "tag-zombie",
+            "desc": "Lasted 101 hands. Oscillated between $35 and $45 before the inevitable decay.",
+            "stat": "Duration: 101 Hands",
+            "hands": [38.75, 37.5, 36.25, 36.25, 37.5, 41.25, 40.0, 38.75, 37.5, 38.75, 37.5, 36.25, 35.0, 38.75, 37.5, 36.25, 35.0, 33.75, 32.5, 31.25],
+            "lesson": "⏱️ Rule #3: Do not grind. The low payout kills you slowly."
+        },
+        {
+            "id": "S30",
+            "name": "The Sniper",
+            "tag_class": "tag-sniper",
+            "desc": "The Apex Case. Two hands, aggressive wins, cashing out at $47.50.",
+            "stat": "Profit: +$7.50 (2 Hands)",
+            "hands": [40, 43.75, 47.5],
+            "lesson": "💰 Rule #4: Hit +20%? CASH OUT."
+        }
+    ]
+
+    for case in archetypes:
+        with st.container():
+            st.markdown(f"""
+            <div class="case-card">
+                <span class="tag {case['tag_class']}">{case['name']} ({case['id']})</span>
+                <p><strong>{case['stat']}</strong></p>
+                <p style="font-size: 0.9rem; color: #ccc;">{case['desc']}</p>
+                <p style="font-size: 0.9rem; font-weight: bold;">{case['lesson']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Simple Sparkline
+            chart_data = pd.DataFrame({'Hand': range(len(case['hands'])), 'Bankroll': case['hands']})
+            c = alt.Chart(chart_data).mark_line(point=True).encode(
+                x=alt.X('Hand', axis=None),
+                y=alt.Y('Bankroll', scale=alt.Scale(domain=[15, 50])),
+                color=alt.value("#8ab4f8")
+            ).properties(height=60)
+            st.altair_chart(c, use_container_width=True)
+
+# ==========================================
+# 📄 PAGE 4: RULES & DETAILS
 # ==========================================
 elif page_selection == "📖 Rules":
-    st.title("📖 Airport Protocol")
-    st.markdown("""
-    ### 1. THE VACUUM CHECK (First 15 Hands)
-    * **Trigger:** Bankroll drops 25% (to $30)
-    * **Action:** 🛑 HARD STOP LOSS.
+    # 📌 Sub-View Routing
+    if st.session_state.current_view == "main":
+        rules.show_rules()
     
-    ---
-    
-    ### 2. THE TEASE (Sub-Surface Check)
-    * **Trigger:** You spike profit, but lose it all within 5 hands.
-    * **Action:** 🛑 EXIT IMMEDIATELY.
-    
-    ---
-    
-    ### 3. THE ZOMBIE ZONE (Hand 40)
-    * **Trigger:** You are "Underwater" (<$40) but not dead.
-    * **Action:** ⏱️ SET TIMER (5 Mins Max). Do NOT grind.
-    
-    ---
-    
-    ### 4. THE HARD DECK (Hand 66)
-    * **Trigger:** Hand 66 reached with no win.
-    * **Action:** 🛑 WALK AWAY. (Math Dead)
-    
-    ---
-    
-    ### 🎯 THE SNIPER EXCEPTION (WIN)
-    * **Trigger:** Hit +20% Profit ($48.00+)
-    * **Action:** 💰 CASH OUT. (Volatility Win)
-    """)
+    # 🕵️ DETAIL VIEWS
+    elif st.session_state.current_view == "detail_vacuum":
+        st.button("← Back to Rules", on_click=lambda: st.session_state.update({"current_view": "main"}))
+        st.title("The Vacuum (S44)")
+        st.markdown("**Status:** 🟥 Critical Failure")
+        st.error("Diagnostic: If you lose 25% of your bankroll in the first 15 hands, the deck is cold. Stop.")
+        st.write("### How to Recognize It:")
+        st.write("1. **Bankroll:** Drops steadily (e.g., 40 -> 35 -> 30).")
+        st.write("2. **Deuce Count:** Very low. You aren't seeing any 2s.")
+        st.write("3. **Hand 15 Check:** If you are at $30 or less, you are in a Vacuum.")
+        st.write("### Real Data (Session S44):")
+        hands = [38.75, 37.5, 36.25, 35.0, 35.0, 33.75, 32.5, 31.25, 30.0, 28.75, 27.5, 26.25, 25.0, 23.75, 22.5, 21.25, 20.0, 18.75]
+        render_bankroll_chart(hands)
+        st.info("Study Frequency: ~19% of sessions.")
+
+    elif st.session_state.current_view == "detail_tease":
+        st.button("← Back to Rules", on_click=lambda: st.session_state.update({"current_view": "main"}))
+        st.title("The Tease (S36)")
+        st.markdown("**Status:** ⚠️ Sub-Surface")
+        st.warning("Diagnostic: You are fighting to get back to zero. You never see 'profit air'.")
+        st.write("### How to Recognize It:")
+        st.write("1. **The Waterline:** Your bankroll hits $40 but never $41.25.")
+        st.write("2. **False Hope:** You hit a 4-of-a-Kind, but it just pays for previous losses.")
+        st.write("3. **Action:** If you are 'Sub-Surface' for 20 hands, leave.")
+        st.write("### Real Data (Session S36):")
+        hands = [38.75, 37.5, 36.25, 35.0, 35.0, 35.0, 33.75, 37.5, 36.25, 35.0, 38.75, 37.5, 36.25, 35.0, 33.75, 32.5, 31.25, 30.0]
+        render_bankroll_chart(hands)
+        st.info("Study Frequency: ~15% of sessions.")
+
+    elif st.session_state.current_view == "detail_zombie":
+        st.button("← Back to Rules", on_click=lambda: st.session_state.update({"current_view": "main"}))
+        st.title("The Zombie (S25)")
+        st.markdown("**Status:** 🧟 Undead / Grinding")
+        st.warning("Diagnostic: The most common trap. You play for 45+ minutes and end up losing.")
+        st.write("### How to Recognize It:")
+        st.write("1. **High Push Rate:** You get lots of 3-of-a-Kind (Money back).")
+        st.write("2. **The Check:** It is Hand 40. Are you above $40? If no -> Zombie.")
+        st.write("3. **Logic:** The payout for 5-of-a-Kind (12) is too low to sustain a long game.")
+        st.write("### Real Data (Session S25):")
+        hands = [38.75, 37.5, 36.25, 36.25, 37.5, 41.25, 40.0, 38.75, 37.5, 38.75, 37.5, 36.25, 35.0, 38.75, 37.5, 36.25, 35.0, 33.75, 32.5, 31.25]
+        render_bankroll_chart(hands)
+        st.info("Study Frequency: ~38% of sessions.")
+
+    elif st.session_state.current_view == "detail_sniper":
+        st.button("← Back to Rules", on_click=lambda: st.session_state.update({"current_view": "main"}))
+        st.title("The Sniper (S30)")
+        st.markdown("**Status:** 🟢 Winner")
+        st.success("Diagnostic: The only way to win consistently is to hit early and leave.")
+        st.write("### How to Recognize It:")
+        st.write("1. **The Spike:** You go up 20% (to $48) in the first 10 minutes.")
+        st.write("2. **The Feeling:** 'I am on a heater.'")
+        st.write("3. **The Trap:** Thinking it will last forever. It won't. Cash out.")
+        st.write("### Real Data (Session S30):")
+        hands = [40, 43.75, 47.5]
+        render_bankroll_chart(hands)
+        st.info("Study Frequency: ~27% of sessions.")
