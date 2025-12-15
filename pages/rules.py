@@ -1,38 +1,64 @@
 import streamlit as st
 
-st.set_page_config(page_title="Airport Protocol", page_icon="✈️")
+def show_rules():
+    st.title("📖 Airport Protocol")
+    st.markdown("### The Official Variance Classifications")
+    st.caption("Select a class below to see real-world examples and detection signs.")
 
-st.markdown("""
-# 🧬 The Airport Protocol: Wallet Card
+    # 1. THE VACUUM
+    with st.container(border=True):
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            st.markdown("### 1. The Vacuum")
+            st.markdown("**Trigger:** Bankroll drops 25% (to $30) in first 15 hands.")
+            st.markdown("🛑 **Action:** HARD STOP LOSS.")
+        with c2:
+            st.write("") # Spacer
+            if st.button("🔍 View Profile", key="btn_vacuum"):
+                st.session_state.current_view = "detail_vacuum"
+                st.rerun()
 
-### 1. THE VACUUM CHECK (First 15 Hands)
-* **Trigger:** Bankroll drops 25% (to $30)
-* **Action:** 🛑 HARD STOP LOSS.
+    # 2. THE TEASE
+    with st.container(border=True):
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            st.markdown("### 2. The Tease (Sub-Surface)")
+            st.markdown("**Trigger:** You spike profit, but lose it all within 5 hands.")
+            st.markdown("🛑 **Action:** EXIT IMMEDIATELY.")
+        with c2:
+            st.write("")
+            if st.button("🔍 View Profile", key="btn_tease"):
+                st.session_state.current_view = "detail_tease"
+                st.rerun()
 
----
+    # 3. THE ZOMBIE
+    with st.container(border=True):
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            st.markdown("### 3. The Zombie")
+            st.markdown("**Trigger:** 'Underwater' (<$40) at Hand 40.")
+            st.markdown("⏱️ **Action:** SET TIMER (Do NOT Grind).")
+        with c2:
+            st.write("")
+            if st.button("🔍 View Profile", key="btn_zombie"):
+                st.session_state.current_view = "detail_zombie"
+                st.rerun()
 
-### 2. THE TEASE (Sub-Surface Check)
-* **Trigger:** You spike profit, but lose it all within 5 hands.
-* **Action:** 🛑 EXIT IMMEDIATELY.
+    # 4. THE SNIPER
+    with st.container(border=True):
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            st.markdown("### 🎯 The Sniper")
+            st.markdown("**Trigger:** Hit +20% Profit ($48.00+).")
+            st.markdown("💰 **Action:** CASH OUT.")
+        with c2:
+            st.write("")
+            if st.button("🔍 View Profile", key="btn_sniper"):
+                st.session_state.current_view = "detail_sniper"
+                st.rerun()
 
----
-
-### 3. THE ZOMBIE ZONE (Hand 40)
-* **Trigger:** You are "Underwater" (<$40) but not dead.
-* **Action:** ⏱️ SET TIMER (5 Mins Max). Do NOT grind.
-
----
-
-### 4. THE HARD DECK (Hand 66)
-* **Trigger:** Hand 66 reached with no win.
-* **Action:** 🛑 WALK AWAY. (Math Dead)
-
----
-
-### 🎯 THE SNIPER EXCEPTION (WIN)
-* **Trigger:** Hit +20% Profit ($48.00+)
-* **Action:** 💰 CASH OUT. (Volatility Win)
-""")
-
-st.divider()
-st.page_link("streamlit_app.py", label="⬅️ Back to Game", icon="🔙")
+    # 5. HARD DECK
+    with st.container(border=True):
+        st.markdown("### 💀 The Hard Deck (Hand 66)")
+        st.markdown("**Trigger:** Hand 66 reached with no win.")
+        st.markdown("**Action:** 🛑 WALK AWAY. (Math Dead)")
