@@ -288,18 +288,10 @@ if page_selection == "📊 Scorecard":
             st.caption("Results will appear here.")
         else:
             # CALCULATE BATCHES: Total Hands -> 1 (Newest at Top)
-            # Example: 17 Hands.
-            # Row 1: 16-17
-            # Row 2: 11-15
-            # Row 3: 6-10
-            # Row 4: 1-5
-            
-            # Step 1: Calculate how many rows of 5 we need
-            # We use ceiling division logic
             import math
             num_rows = math.ceil(total_hands / 5)
             
-            # Step 2: Iterate backwards from the last row index down to 0
+            # Iterate backwards from the last row index down to 0
             for row_idx in range(num_rows - 1, -1, -1):
                 start_index = row_idx * 5
                 end_index = start_index + 5
@@ -370,6 +362,22 @@ elif page_selection == "✋ Hand Helper":
             
             st.write(f"**HOLD:** {' '.join(held_display_list)}")
             st.caption(f"Est. EV: {ev:.2f} Credits")
+            
+            # --- 🔮 RESTORED HIT PROBABILITIES ---
+            st.divider()
+            st.subheader("🔮 Hit Probabilities")
+            
+            display_order = ["Natural Royal", "Four Deuces", "Wild Royal", "5 of a Kind", 
+                            "Straight Flush", "4 of a Kind", "Full House", "Flush", "Straight", "3 of a Kind"]
+            
+            for h in display_order:
+                p = probs.get(h, 0.0)
+                if p > 0.001:
+                    pct = p * 100
+                    ctx = f" (**1 in {int(round(1/p))}**)" if p < 0.50 else ""
+                    st.write(f"**{h}:** {pct:.1f}%{ctx}")
+                    st.progress(min(p, 1.0))
+
     else:
         st.info("Pick 5 cards.")
 
